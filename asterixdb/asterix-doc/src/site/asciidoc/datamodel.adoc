@@ -1,0 +1,36 @@
+////
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+////
+
+= The Asterix Data Model (ADM)
+:includedir: ../../shared/modules/datamodel/partials
+:toc:
+:toclevels: 2
+
+An instance of Asterix data model (ADM) can be a __primitive type__
+(`boolean`, `tinyint`, `smallint`, `integer`, `bigint`, `string`,
+`float`, `double`, `date`, `time`, `datetime`, etc.), a __special type__
+(`null` or `missing`), or a __derived type__.
+
+The type names are case-insensitive, e.g., both `BIGINT` and `bigint`
+are acceptable.
+
+include::{includedir}/datamodel_primitive_common.adoc[]
+include::{includedir}/datamodel_primitive_delta.adoc[]
+include::{includedir}/datamodel_incomplete.adoc[]
+include::{includedir}/datamodel_composite.adoc[]

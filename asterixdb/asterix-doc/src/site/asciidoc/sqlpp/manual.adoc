@@ -1,0 +1,31 @@
+= The Query Language
+:includedir: ../../shared/modules/sqlpp/partials
+:toc:
+:toclevels: 1
+
+:aggregate-functions: xref:builtins.adoc#AggregateFunctions
+:window-functions: xref:builtins.adoc#WindowFunctions
+:over-clauses: xref:manual.adoc#Over_clauses
+:service-api: link:../api.html#queryservice
+
+include::{includedir}/1_intro.adoc[]
+include::{includedir}/2_expr_title.adoc[]
+include::{includedir}/2_expr.adoc[]
+include::{includedir}/3_query_title.adoc[]
+include::{includedir}/3_declare_dataverse.adoc[]
+include::{includedir}/3_declare_function.adoc[]
+include::{includedir}/3_query.adoc[]
+include::{includedir}/4_error_title.adoc[]
+include::{includedir}/4_error.adoc[]
+include::{includedir}/5_ddl_head.adoc[]
+include::{includedir}/5_ddl_dataset_index.adoc[]
+include::{includedir}/5_ddl_function_removal.adoc[]
+include::{includedir}/5_ddl_dml.adoc[]
+include::{includedir}/appendix_1_title.adoc[]
+include::{includedir}/appendix_1_keywords.adoc[]
+include::{includedir}/appendix_2_title.adoc[]
+include::{includedir}/appendix_2_parameters.adoc[]
+include::{includedir}/appendix_2_parallel_sort.adoc[]
+include::{includedir}/appendix_2_index_only.adoc[]
+include::{includedir}/appendix_3_title.adoc[]
+include::{includedir}/appendix_3_resolution.adoc[]

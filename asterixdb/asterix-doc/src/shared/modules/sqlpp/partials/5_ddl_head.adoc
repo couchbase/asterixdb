@@ -1,0 +1,21 @@
+[[ddl-and-dml-statements]]
+== 5. DDL and DML statements
+
+------------------------------------------------------
+Statement ::= ( ( SingleStatement )? ( ";" )+ )* <EOF>
+SingleStatement ::= DatabaseDeclaration
+                  | FunctionDeclaration
+                  | CreateStatement
+                  | DropStatement
+                  | LoadStatement
+                  | SetStatement
+                  | InsertStatement
+                  | DeleteStatement
+                  | Query
+------------------------------------------------------
+
+In addition to queries, an implementation of the query language needs to
+support statements for data definition and manipulation purposes as well
+as controlling the context to be used in evaluating query expressions.
+This section details the DDL and DML statements supported in the query
+language as realized today in Apache AsterixDB.

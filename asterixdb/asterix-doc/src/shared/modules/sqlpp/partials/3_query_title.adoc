@@ -1,0 +1,10 @@
+[[queries]]
+== 3. Queries
+
+A query can be any legal expression or `SELECT` statement. A query
+always ends with a semicolon.
+
+--------------------------------------------
+Query ::= (Expression | SelectStatement) ";"
+--------------------------------------------
+

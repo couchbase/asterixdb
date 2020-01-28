@@ -1,0 +1,35 @@
+When writing a complex query, it can sometimes be helpful to define one
+or more auxilliary functions that each address a sub-piece of the
+overall query. The declare function statement supports the creation of
+such helper functions. In general, the function body (expression) can be
+any legal query expression.
+
+-----------------------------------------------------------------------------------------
+FunctionDeclaration  ::= "DECLARE" "FUNCTION" Identifier ParameterList "{" Expression "}"
+ParameterList        ::= "(" ( <VARIABLE> ( "," <VARIABLE> )* )? ")"
+-----------------------------------------------------------------------------------------
+
+The following is a simple example of a temporary function definition and
+its use.
+
+[[example]]
+Example
+
+---------------------------------------------------------
+DECLARE FUNCTION friendInfo(userId) {
+    (SELECT u.id, u.name, len(u.friendIds) AS friendCount
+     FROM GleambookUsers u
+     WHERE u.id = userId)[0]
+ };
+
+SELECT VALUE friendInfo(2);
+---------------------------------------------------------
+
+For our sample data set, this returns:
+
+----------------------------------------------------
+[
+  { "id": 2, "name": "IsbelDull", "friendCount": 2 }
+]
+----------------------------------------------------
+

@@ -1,0 +1,2 @@
+[[appendix-3.-variable-bindings-and-name-resolution]]
+== Appendix 3. Variable Bindings and Name Resolution

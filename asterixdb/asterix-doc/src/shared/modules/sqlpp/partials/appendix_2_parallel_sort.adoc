@@ -1,0 +1,31 @@
+[[parallel-sort-parameter]]
+=== Parallel Sort Parameter
+
+The following parameter enables you to activate or deactivate full
+parallel sort for order-by operations.
+
+When full parallel sort is inactive (`false`), each existing data
+partition is sorted (in parallel), and then all data partitions are
+merged into a single node.
+
+When full parallel sort is active (`true`), the data is first sampled,
+and then repartitioned so that each partition contains data that is
+greater than the previous partition. The data in each partition is then
+sorted (in parallel), but the sorted partitions are not merged into a
+single node.
+
+* *compiler.sort.parallel*: A boolean specifying whether full parallel
+sort is active (`true`) or inactive (`false`). The default value is
+`true`.
+
+[[example]]
+Example
+
+-------------------------------------------
+SET `compiler.sort.parallel` "true";
+
+SELECT VALUE user
+FROM GleambookUsers AS user
+ORDER BY ARRAY_LENGTH(user.friendIds) DESC;
+-------------------------------------------
+

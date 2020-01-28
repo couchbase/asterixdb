@@ -1,0 +1,132 @@
+[[functions]]
+====  Functions
+
+The CREATE FUNCTION statement creates a *named* function that can then
+be used and reused in queries. The body of a function can be any query
+expression involving the function's parameters.
+
+----------------------------------------------------------------------------------------------------
+FunctionSpecification ::= "FUNCTION" FunctionOrTypeName IfNotExists ParameterList "{" Expression "}"
+----------------------------------------------------------------------------------------------------
+
+The following is an example of a CREATE FUNCTION statement which is
+similar to our earlier DECLARE FUNCTION example. It differs from that
+example in that it results in a function that is persistently registered
+by name in the specified dataverse (the current dataverse being used, if
+not otherwise specified).
+
+[[example]]
+Example
+
+---------------------------------------------------------
+CREATE FUNCTION friendInfo(userId) {
+    (SELECT u.id, u.name, len(u.friendIds) AS friendCount
+     FROM GleambookUsers u
+     WHERE u.id = userId)[0]
+ };
+---------------------------------------------------------
+
+[[synonyms]]
+====  Synonyms
+
+--------------------------------------------------------------------------------
+SynonymSpecification ::= "SYNONYM" QualifiedName "FOR" QualifiedName IfNotExists
+--------------------------------------------------------------------------------
+
+The CREATE SYNONYM statement creates a synonym for a given dataset. This
+synonym may be used used instead of the dataset name in SELECT, INSERT,
+UPSERT, DELETE, and LOAD statements. The target dataset does not need to
+exist when the synonym is created.
+
+[[example-1]]
+Example
+
+----------------------------------------------------------------
+CREATE DATASET GleambookUsers(GleambookUserType) PRIMARY KEY id;
+
+CREATE SYNONYM GleambookUsersSynonym FOR GleambookUsers;
+
+SELECT * FROM GleambookUsersSynonym;
+----------------------------------------------------------------
+
+More information on how synonyms are resolved can be found in the
+appendix section on Variable Resolution.
+
+[[removal]]
+====  Removal
+
+------------------------------------------------------------------------
+DropStatement       ::= "DROP" ( "DATAVERSE" Identifier IfExists
+                               | "TYPE" FunctionOrTypeName IfExists
+                               | "DATASET" QualifiedName IfExists
+                               | "INDEX" DoubleQualifiedName IfExists
+                               | "SYNONYM" QualifiedName IfExists
+                               | "FUNCTION" FunctionSignature IfExists )
+IfExists            ::= ( "IF" "EXISTS" )?
+------------------------------------------------------------------------
+
+The DROP statement is the inverse of the CREATE statement. It can be
+used to drop dataverses, datatypes, datasets, indexes, functions, and
+synonyms.
+
+The following examples illustrate some uses of the DROP statement.
+
+[[example-2]]
+Example
+
+----------------------------------------------
+DROP DATASET GleambookUsers IF EXISTS;
+
+DROP INDEX GleambookMessages.gbSenderLocIndex;
+
+DROP TYPE TinySocial2.GleambookUserType;
+
+DROP FUNCTION friendInfo@1;
+
+DROP SYNONYM GleambookUsersSynonym;
+
+DROP DATAVERSE TinySocial;
+----------------------------------------------
+
+When an artifact is dropped, it will be droppped from the current
+dataverse if none is specified (see the DROP DATASET example above) or
+from the specified dataverse (see the DROP TYPE example above) if one is
+specified by fully qualifying the artifact name in the DROP statement.
+When specifying an index to drop, the index name must be qualified by
+the dataset that it indexes. When specifying a function to drop, since
+the query language allows functions to be overloaded by their number of
+arguments, the identifying name of the function to be dropped must
+explicitly include that information. (`friendInfo@1` above denotes the
+1-argument function named friendInfo in the current dataverse.)
+
+[[load-statement]]
+==== Load Statement
+
+-----------------------------------------------------------------------------------------------------
+LoadStatement  ::= <LOAD> <DATASET> QualifiedName <USING> AdapterName Configuration ( <PRE-SORTED> )?
+-----------------------------------------------------------------------------------------------------
+
+The LOAD statement is used to initially populate a dataset via bulk
+loading of data from an external file. An appropriate adapter must be
+selected to handle the nature of the desired external data. The LOAD
+statement accepts the same adapters and the same parameters as discussed
+earlier for External datasets. (See the link:externaldata.html[guide to
+external data] for more information on the available adapters.) If a
+dataset has an auto-generated primary key field, the file to be imported
+should not include that field in it.
+
+The target dataset name may be a synonym introduced by CREATE SYNONYM
+statement.
+
+The following example shows how to bulk load the GleambookUsers dataset
+from an external file containing data that has been prepared in ADM
+(Asterix Data Model) format.
+
+[[example-3]]
+Example
+
+---------------------------------------------------------------------------------------
+ LOAD DATASET GleambookUsers USING localfs
+    (("path"="127.0.0.1:///Users/bignosqlfan/tinysocialnew/gbu.adm"),("format"="adm"));
+---------------------------------------------------------------------------------------
+

@@ -1,0 +1,43 @@
+= Builtin Functions
+:includedir: ../../shared/modules/builtins/partials
+:toc:
+:toclevels: 1
+
+:data-model: xref:../datamodel.adoc
+:primitive-types: xref:../datamodel.adoc#PrimitiveTypes
+:over-clauses: xref:manual.adoc#Over_clauses
+:window-partition-clause: xref:manual.adoc#Window_partition_clause
+:window-order-clause: xref:manual.adoc#Window_order_clause
+:window-frame-clause: xref:manual.adoc#Window_frame_clause
+:nulls-treatment: xref:manual.adoc#Nulls_treatment
+:nth-val-from: xref:manual.adoc#Nth_val_from
+:select-statements: xref:manual.adoc#SELECT_statements
+:sql-92-aggregation-functions: xref:manual.adoc#SQL-92_aggregation_functions
+:aggregation-functions: xref:manual.adoc#Aggregation_functions
+:aggregate-functions: xref:builtins.adoc#AggregateFunctions
+
+:n_gram: true
+:upper-name: ASTERIXDB
+:camel-name: AsterixDB
+:title-name: Asterixdb
+:lower-name: asterixdb
+
+include::{includedir}/0_toc_common.adoc[]
+include::{includedir}/1_numeric_common.adoc[]
+include::{includedir}/1_numeric_delta.adoc[]
+include::{includedir}/2_string_common.adoc[]
+include::{includedir}/2_string_delta.adoc[]
+include::{includedir}/3_binary.adoc[]
+include::{includedir}/4_spatial.adoc[]
+include::{includedir}/5_similarity.adoc[]
+include::{includedir}/6_tokenizing.adoc[]
+include::{includedir}/7_temporal.adoc[]
+include::{includedir}/7_allens.adoc[]
+include::{includedir}/8_record.adoc[]
+include::{includedir}/9_aggregate_sql.adoc[]
+include::{includedir}/10_comparison.adoc[]
+include::{includedir}/11_type.adoc[]
+include::{includedir}/13_conditional.adoc[]
+include::{includedir}/12_misc.adoc[]
+include::{includedir}/15_bitwise.adoc[]
+include::{includedir}/14_window.adoc[]
