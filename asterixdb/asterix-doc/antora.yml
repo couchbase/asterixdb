@@ -1,0 +1,8 @@
+name: analytics
+version: true
+ext:
+  collector:
+    run:
+      command: asterixdb/asterix-doc/getafix.sh
+    scan:
+      dir: build
