@@ -3,6 +3,7 @@ version: true
 ext:
   collector:
     run:
-      command: asterixdb/asterix-doc/getafix.sh
+      dir: .
+      command: ./getafix.sh
     scan:
       dir: build
