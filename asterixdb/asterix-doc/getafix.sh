@@ -2,7 +2,7 @@
 
 cd $(dirname $0)
 
-./clean.sh
+rm -rf modules/
 
 mkdir -p modules/asterixdb/partials/
 
