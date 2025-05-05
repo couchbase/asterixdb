@@ -1,0 +1,9 @@
+name: analytics
+version: true
+ext:
+  collector:
+    run:
+      dir: .
+      command: ./getafix.sh
+    scan:
+      dir: build
