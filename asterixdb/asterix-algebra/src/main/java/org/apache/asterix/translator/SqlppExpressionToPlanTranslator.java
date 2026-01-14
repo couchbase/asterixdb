@@ -114,6 +114,7 @@ import org.apache.hyracks.algebricks.core.algebra.expressions.AbstractFunctionCa
 import org.apache.hyracks.algebricks.core.algebra.expressions.AbstractLogicalExpression;
 import org.apache.hyracks.algebricks.core.algebra.expressions.AggregateFunctionCallExpression;
 import org.apache.hyracks.algebricks.core.algebra.expressions.ConstantExpression;
+import org.apache.hyracks.algebricks.core.algebra.expressions.DoNotExtractExpressionAnnotation;
 import org.apache.hyracks.algebricks.core.algebra.expressions.IAlgebricksConstantValue;
 import org.apache.hyracks.algebricks.core.algebra.expressions.IExpressionAnnotation;
 import org.apache.hyracks.algebricks.core.algebra.expressions.ScalarFunctionCallExpression;
@@ -916,8 +917,10 @@ public class SqlppExpressionToPlanTranslator extends LangExpressionToPlanTransla
         CallExpr toObjectExpr = new CallExpr(new FunctionSignature(BuiltinFunctions.TO_OBJECT),
                 Collections.singletonList(projectionExpr));
         toObjectExpr.setSourceLocation(sourceLoc);
+        RecordConstructor recordConstructor = new RecordConstructor(Collections.emptyList());
+        recordConstructor.addHint(DoNotExtractExpressionAnnotation.INSTANCE);
         CallExpr ifMissingOrNullExpr = new CallExpr(new FunctionSignature(BuiltinFunctions.IF_MISSING_OR_NULL),
-                Arrays.asList(toObjectExpr, new RecordConstructor(Collections.emptyList())));
+                Arrays.asList(toObjectExpr, recordConstructor));
         ifMissingOrNullExpr.setSourceLocation(sourceLoc);
         return ifMissingOrNullExpr;
     }

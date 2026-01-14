@@ -1482,6 +1482,9 @@ abstract class LangExpressionToPlanTranslator
             throws CompilationException {
         AbstractFunctionCallExpression f = new ScalarFunctionCallExpression(
                 FunctionUtil.getFunctionInfo(BuiltinFunctions.OPEN_RECORD_CONSTRUCTOR));
+        if (rc.hasHints()) {
+            f.putAnnotations(rc.getHints());
+        }
         f.setSourceLocation(rc.getSourceLocation());
         LogicalVariable v1 = context.newVar();
         AssignOperator a = new AssignOperator(v1, new MutableObject<>(f));
