@@ -10053,6 +10053,11 @@
       </compilation-unit>
     </test-case>
     <test-case FilePath="select-star">
+      <compilation-unit name="nested">
+        <output-dir compare="Text">nested</output-dir>
+      </compilation-unit>
+    </test-case>
+    <test-case FilePath="select-star">
       <compilation-unit name="no_star">
         <output-dir compare="Text">no_star</output-dir>
       </compilation-unit>

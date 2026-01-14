@@ -39,6 +39,7 @@ import org.apache.hyracks.algebricks.core.algebra.base.LogicalVariable;
 import org.apache.hyracks.algebricks.core.algebra.expressions.AbstractFunctionCallExpression;
 import org.apache.hyracks.algebricks.core.algebra.expressions.AbstractLogicalExpression;
 import org.apache.hyracks.algebricks.core.algebra.expressions.ConstantExpression;
+import org.apache.hyracks.algebricks.core.algebra.expressions.DoNotExtractExpressionAnnotation;
 import org.apache.hyracks.algebricks.core.algebra.expressions.VariableReferenceExpression;
 import org.apache.hyracks.algebricks.core.algebra.functions.AlgebricksBuiltinFunctions;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
@@ -260,6 +261,14 @@ public class ExtractCommonExpressionsRule implements IAlgebraicRewriteRule {
         return modified;
     }
 
+    private static boolean isExprExtractable(ILogicalExpression expr) {
+        if (expr.getExpressionTag() != LogicalExpressionTag.FUNCTION_CALL) {
+            return true;
+        }
+        AbstractFunctionCallExpression funcExpr = (AbstractFunctionCallExpression) expr;
+        return !funcExpr.hasAnnotation(DoNotExtractExpressionAnnotation.class);
+    }
+
     private class CommonExpressionSubstitutionVisitor implements ILogicalExpressionReferenceTransform {
 
         private IOptimizationContext context;
@@ -302,7 +311,7 @@ public class ExtractCommonExpressionsRule implements IAlgebraicRewriteRule {
                         }
                     }
                 } else {
-                    if (expr.isFunctional() && assignCommonExpression(exprEqClass, expr)) {
+                    if (expr.isFunctional() && isExprExtractable(expr) && assignCommonExpression(exprEqClass, expr)) {
                         modified = true;
                         //re-obtain the live vars after rewriting in the method called in the if condition
                         Set<LogicalVariable> liveVars = new HashSet<LogicalVariable>();
