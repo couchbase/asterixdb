@@ -50,7 +50,7 @@ import org.apache.asterix.object.base.AdmObjectNode;
 import org.apache.asterix.translator.SessionConfig;
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
 
-public class CatalogStatementHandler {
+public class IcebergCatalogStatementHandler {
 
     private final Statement.Kind kind;
     private final MetadataProvider metadataProvider;
@@ -60,7 +60,7 @@ public class CatalogStatementHandler {
     private final IMetadataLockUtil lockUtil;
     private final IMetadataLockManager lockManager;
 
-    public CatalogStatementHandler(Statement.Kind kind, MetadataProvider metadataProvider, Statement statement,
+    public IcebergCatalogStatementHandler(Statement.Kind kind, MetadataProvider metadataProvider, Statement statement,
             Creator creator, SessionConfig sessionConfig, IMetadataLockUtil lockUtil,
             IMetadataLockManager lockManager) {
         this.kind = kind;

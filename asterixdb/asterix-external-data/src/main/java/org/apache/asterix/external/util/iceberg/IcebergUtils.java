@@ -18,15 +18,13 @@
  */
 package org.apache.asterix.external.util.iceberg;
 
-import static org.apache.asterix.common.exceptions.ErrorCode.PARAM_NOT_ALLOWED_IF_PARAM_IS_PRESENT;
+import static org.apache.asterix.common.exceptions.ErrorCode.EXTERNAL_SOURCE_ERROR;
 import static org.apache.asterix.common.exceptions.ErrorCode.UNSUPPORTED_ICEBERG_DATA_FORMAT;
 import static org.apache.asterix.external.util.aws.EnsureCloseClientsFactoryRegistry.FACTORY_INSTANCE_ID_KEY;
 import static org.apache.asterix.external.util.iceberg.IcebergConstants.ICEBERG_AVRO_FORMAT;
 import static org.apache.asterix.external.util.iceberg.IcebergConstants.ICEBERG_CATALOG_PROPERTY_PREFIX_INTERNAL;
 import static org.apache.asterix.external.util.iceberg.IcebergConstants.ICEBERG_COLLECTION_PROPERTY_PREFIX_INTERNAL;
 import static org.apache.asterix.external.util.iceberg.IcebergConstants.ICEBERG_PARQUET_FORMAT;
-import static org.apache.asterix.external.util.iceberg.IcebergConstants.ICEBERG_SNAPSHOT_ID_PROPERTY_KEY;
-import static org.apache.asterix.external.util.iceberg.IcebergConstants.ICEBERG_SNAPSHOT_TIMESTAMP_PROPERTY_KEY;
 import static org.apache.asterix.external.util.iceberg.IcebergConstants.ICEBERG_TABLE_FORMAT;
 import static org.apache.asterix.external.util.iceberg.IcebergConstants.ICEBERG_WAREHOUSE_PROPERTY_KEY;
 
@@ -53,7 +51,6 @@ import org.apache.asterix.external.util.iceberg.nessie.NessieUtils;
 import org.apache.asterix.external.util.iceberg.rest.RestUtils;
 import org.apache.asterix.om.types.ARecordType;
 import org.apache.iceberg.CatalogProperties;
-import org.apache.iceberg.Table;
 import org.apache.iceberg.aws.AwsProperties;
 import org.apache.iceberg.aws.glue.GlueCatalog;
 import org.apache.iceberg.catalog.Catalog;
@@ -163,24 +160,7 @@ public class IcebergUtils {
                     IcebergConstants.ICEBERG_NAMESPACE_PROPERTY_KEY);
         }
 
-        // validate snapshot id and timestamp
-        String snapshotId = properties.get(ICEBERG_SNAPSHOT_ID_PROPERTY_KEY);
-        String snapshotTimestamp = properties.get(ICEBERG_SNAPSHOT_TIMESTAMP_PROPERTY_KEY);
-        if (snapshotId != null && snapshotTimestamp != null) {
-            throw new CompilationException(PARAM_NOT_ALLOWED_IF_PARAM_IS_PRESENT,
-                    ICEBERG_SNAPSHOT_TIMESTAMP_PROPERTY_KEY, ICEBERG_SNAPSHOT_ID_PROPERTY_KEY);
-        }
-
-        try {
-            if (snapshotId != null) {
-                Long.parseLong(snapshotId);
-            } else if (snapshotTimestamp != null) {
-                Long.parseLong(snapshotTimestamp);
-            }
-        } catch (NumberFormatException e) {
-            throw new CompilationException(ErrorCode.INVALID_ICEBERG_SNAPSHOT_VALUE,
-                    snapshotId != null ? snapshotId : snapshotTimestamp);
-        }
+        IcebergSnapshotUtils.validateAndGetSnapshot(properties);
     }
 
     /**
@@ -353,10 +333,6 @@ public class IcebergUtils {
                 EnsureCloseClientsFactoryRegistry.closeAll(awsClientsFactoryId);
             }
         }
-    }
-
-    public static boolean snapshotIdExists(Table table, long snapshot) {
-        return table.snapshot(snapshot) != null;
     }
 
     public static String[] getProjectedFields(Map<String, String> configuration) throws IOException {

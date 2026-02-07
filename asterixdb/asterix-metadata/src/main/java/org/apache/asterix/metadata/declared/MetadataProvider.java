@@ -1023,7 +1023,7 @@ public class MetadataProvider implements IMetadataProvider<DataSourceId, String>
         }
     }
 
-    protected void addIcebergCatalogPropertiesIfNeeded(ICcApplicationContext appCtx, Map<String, String> configuration)
+    public void addIcebergCatalogPropertiesIfNeeded(ICcApplicationContext appCtx, Map<String, String> configuration)
             throws AlgebricksException {
         if (IcebergUtils.isIcebergTable(configuration)) {
             String catalogName = configuration.get(IcebergConstants.ICEBERG_CATALOG_NAME);

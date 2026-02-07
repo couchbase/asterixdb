@@ -69,7 +69,8 @@ import org.apache.asterix.app.result.ResultReader;
 import org.apache.asterix.app.result.fields.ResultHandlePrinter;
 import org.apache.asterix.app.result.fields.ResultsPrinter;
 import org.apache.asterix.app.result.fields.StatusPrinter;
-import org.apache.asterix.app.translator.handlers.CatalogStatementHandler;
+import org.apache.asterix.app.translator.handlers.IcebergCatalogStatementHandler;
+import org.apache.asterix.app.translator.helpers.IcebergStatementValidationHelper;
 import org.apache.asterix.column.validation.ColumnPropertiesValidationUtil;
 import org.apache.asterix.column.validation.ColumnSupportedTypesValidator;
 import org.apache.asterix.common.api.IApplicationContext;
@@ -117,7 +118,6 @@ import org.apache.asterix.external.util.ExternalDataConstants;
 import org.apache.asterix.external.util.ExternalDataUtils;
 import org.apache.asterix.external.util.WriterValidationUtil;
 import org.apache.asterix.external.util.iceberg.IcebergConstants;
-import org.apache.asterix.external.util.iceberg.IcebergUtils;
 import org.apache.asterix.external.writer.printer.parquet.SchemaConverterVisitor;
 import org.apache.asterix.lang.common.base.Expression;
 import org.apache.asterix.lang.common.base.IQueryRewriter;
@@ -199,7 +199,6 @@ import org.apache.asterix.metadata.dataset.DatasetFormatInfo;
 import org.apache.asterix.metadata.dataset.hints.DatasetHints;
 import org.apache.asterix.metadata.dataset.hints.DatasetHints.DatasetNodegroupCardinalityHint;
 import org.apache.asterix.metadata.declared.MetadataProvider;
-import org.apache.asterix.metadata.entities.Catalog;
 import org.apache.asterix.metadata.entities.CompactionPolicy;
 import org.apache.asterix.metadata.entities.Database;
 import org.apache.asterix.metadata.entities.Dataset;
@@ -1074,7 +1073,7 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
                     ExternalDataUtils.normalize(properties);
                     ExternalDataUtils.validate(properties);
                     ExternalDataUtils.validateType(properties, (ARecordType) itemType);
-                    validateIfIcebergTable(properties, mdTxnCtx, sourceLoc);
+                    validateIfIcebergTable(metadataProvider, properties, mdTxnCtx, sourceLoc);
                     validateExternalDatasetProperties(externalDetails, properties, dd.getSourceLocation(), mdTxnCtx,
                             appCtx, metadataProvider);
                     datasetDetails = new ExternalDatasetDetails(externalDetails.getAdapter(), properties, new Date(),
@@ -1187,20 +1186,9 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
         return Optional.of(dataset);
     }
 
-    protected void validateIfIcebergTable(Map<String, String> properties, MetadataTransactionContext mdTxnCtx,
-            SourceLocation srcLoc) throws AlgebricksException {
-        if (!IcebergUtils.isIcebergTable(properties)) {
-            return;
-        }
-        IcebergUtils.setDefaultFormat(properties);
-        IcebergUtils.validateIcebergTableProperties(properties);
-
-        // ensure the specified catalog exists
-        String catalogName = properties.get(IcebergConstants.ICEBERG_CATALOG_NAME);
-        Catalog catalog = MetadataManager.INSTANCE.getCatalog(mdTxnCtx, catalogName);
-        if (catalog == null) {
-            throw new CompilationException(ErrorCode.UNKNOWN_CATALOG, srcLoc, catalogName);
-        }
+    protected void validateIfIcebergTable(MetadataProvider metadataProvider, Map<String, String> properties,
+            MetadataTransactionContext mdTxnCtx, SourceLocation srcLoc) throws AlgebricksException {
+        IcebergStatementValidationHelper.validateIfIcebergTable(appCtx, metadataProvider, mdTxnCtx, properties, srcLoc);
     }
 
     protected boolean isDatasetWithoutTypeSpec(DatasetDecl datasetDecl, ARecordType aRecordType,
@@ -5897,7 +5885,7 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
 
     protected void handleCatalogStatement(Statement.Kind kind, MetadataProvider metadataProvider, Statement stmt,
             IHyracksClientConnection hcc, IRequestParameters requestParameters) throws Exception {
-        CatalogStatementHandler statement = new CatalogStatementHandler(kind, metadataProvider, stmt,
+        IcebergCatalogStatementHandler statement = new IcebergCatalogStatementHandler(kind, metadataProvider, stmt,
                 Creator.DEFAULT_CREATOR, sessionConfig, lockUtil, lockManager);
         statement.handle();
     }

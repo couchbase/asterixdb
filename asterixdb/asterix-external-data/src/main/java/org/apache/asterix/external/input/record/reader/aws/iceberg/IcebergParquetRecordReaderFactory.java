@@ -21,10 +21,8 @@ package org.apache.asterix.external.input.record.reader.aws.iceberg;
 import static org.apache.asterix.common.exceptions.ErrorCode.EXTERNAL_SOURCE_ERROR;
 import static org.apache.asterix.external.util.iceberg.IcebergConstants.ICEBERG_SCHEMA_ID_PROPERTY_KEY;
 import static org.apache.asterix.external.util.iceberg.IcebergConstants.ICEBERG_SNAPSHOT_ID_PROPERTY_KEY;
-import static org.apache.asterix.external.util.iceberg.IcebergConstants.ICEBERG_SNAPSHOT_TIMESTAMP_PROPERTY_KEY;
+import static org.apache.asterix.external.util.iceberg.IcebergSnapshotUtils.snapshotIdExists;
 import static org.apache.asterix.external.util.iceberg.IcebergUtils.getProjectedFields;
-import static org.apache.asterix.external.util.iceberg.IcebergUtils.snapshotIdExists;
-import static org.apache.hyracks.api.util.ExceptionUtils.getMessageOrToString;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -34,6 +32,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Set;
 
@@ -48,6 +47,7 @@ import org.apache.asterix.external.api.IRecordReader;
 import org.apache.asterix.external.input.filter.IcebergTableFilterEvaluatorFactory;
 import org.apache.asterix.external.util.ExternalDataConstants;
 import org.apache.asterix.external.util.iceberg.IcebergConstants;
+import org.apache.asterix.external.util.iceberg.IcebergSnapshotUtils;
 import org.apache.asterix.external.util.iceberg.IcebergUtils;
 import org.apache.hyracks.algebricks.common.constraints.AlgebricksAbsolutePartitionConstraint;
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
@@ -65,7 +65,6 @@ import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.data.Record;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.io.CloseableIterable;
-import org.apache.iceberg.util.SnapshotUtil;
 
 public class IcebergParquetRecordReaderFactory implements IIcebergRecordReaderFactory<Record> {
 
@@ -215,22 +214,11 @@ public class IcebergParquetRecordReaderFactory implements IIcebergRecordReaderFa
     private TableScan setAndPinScanSnapshot(Map<String, String> configurationCopy, Table table, TableScan scan)
             throws CompilationException {
         long snapshot;
-        String snapshotIdStr = configurationCopy.get(ICEBERG_SNAPSHOT_ID_PROPERTY_KEY);
-        String asOfTimestampStr = configurationCopy.get(ICEBERG_SNAPSHOT_TIMESTAMP_PROPERTY_KEY);
-
-        if (snapshotIdStr != null) {
-            snapshot = Long.parseLong(snapshotIdStr);
+        Optional<Long> snapshotOptional = IcebergSnapshotUtils.getSnapshotId(configurationCopy, table);
+        if (snapshotOptional.isPresent()) {
+            snapshot = snapshotOptional.get();
             if (!snapshotIdExists(table, snapshot)) {
-                throw CompilationException.create(ErrorCode.ICEBERG_SNAPSHOT_ID_NOT_FOUND, snapshot);
-            }
-        } else if (asOfTimestampStr != null) {
-            try {
-                snapshot = SnapshotUtil.snapshotIdAsOfTime(table, Long.parseLong(asOfTimestampStr));
-                if (!snapshotIdExists(table, snapshot)) {
-                    throw CompilationException.create(ErrorCode.ICEBERG_SNAPSHOT_ID_NOT_FOUND, snapshot);
-                }
-            } catch (IllegalArgumentException e) {
-                throw CompilationException.create(EXTERNAL_SOURCE_ERROR, e, getMessageOrToString(e));
+                throw CompilationException.create(ErrorCode.ICEBERG_SNAPSHOT_ID_NOT_FOUND, snapshot, table.name());
             }
         } else {
             if (table.currentSnapshot() == null) {

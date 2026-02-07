@@ -101,7 +101,7 @@ public class IcebergFileRecordReader implements IRecordReader<Record> {
         Snapshot snapshot = table.snapshot(snapshotId);
         if (snapshot == null) {
             // Snapshot might have been expired/GC'd between compile and runtime
-            throw CompilationException.create(ErrorCode.ICEBERG_SNAPSHOT_ID_NOT_FOUND, snapshotId);
+            throw CompilationException.create(ErrorCode.ICEBERG_SNAPSHOT_ID_NOT_FOUND, snapshotId, table.name());
         }
 
         this.schemaAtSnapshot = table.schemas().get(snapshot.schemaId());
