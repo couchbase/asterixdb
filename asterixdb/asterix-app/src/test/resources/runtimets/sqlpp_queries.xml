@@ -4333,7 +4333,7 @@
     <test-case FilePath="ddl/create-index">
       <compilation-unit name="create-index-4">
         <output-dir compare="Text">create-index-4</output-dir>
-        <expected-error>Syntax error: In line 53 >>create  primary index if not exists sec_primary_idx1  if not exists on LineItem;&lt;&lt; Encountered &lt;IDENTIFIER&gt; "sec_primary_idx1" at column 37.</expected-error>
+        <expected-error>Syntax error: In line 53 >>create  primary index if not exists sec_primary_idx1  if not exists on LineItem;&lt;&lt; Encountered "if" at column 55.</expected-error>
       </compilation-unit>
     </test-case>
     <test-case FilePath="ddl/create-index">
