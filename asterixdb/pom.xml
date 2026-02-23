@@ -91,7 +91,7 @@
     <!-- Versions under dependencymanagement or used in many projects via properties -->
     <algebricks.version>0.3.10-SNAPSHOT</algebricks.version>
     <hyracks.version>0.3.10-SNAPSHOT</hyracks.version>
-    <hadoop.version>3.4.1</hadoop.version>
+    <hadoop.version>3.4.2</hadoop.version>
     <jacoco.version>0.7.6.201602180812</jacoco.version>
     <log4j.version>2.22.1</log4j.version>
     <!-- IMPORTANT: please keep the aws-crt version in sync with that defined in the AWS SDK BOM -->
