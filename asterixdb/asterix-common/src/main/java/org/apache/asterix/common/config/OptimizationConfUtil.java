@@ -68,6 +68,8 @@ public class OptimizationConfUtil {
                 compilerProperties.getSortParallel());
         boolean indexOnly = getBoolean(querySpecificConfig, CompilerProperties.COMPILER_INDEXONLY_KEY,
                 compilerProperties.isIndexOnly());
+        boolean rewriteOrToJoin = getBoolean(querySpecificConfig, CompilerProperties.COMPILER_REWRITE_DISJUNCTION_KEY,
+                compilerProperties.rewriteDisjunctionToJoin());
         boolean sanityCheck = getBoolean(querySpecificConfig, CompilerProperties.COMPILER_INTERNAL_SANITYCHECK_KEY,
                 compilerProperties.isSanityCheck());
         boolean externalFieldPushdown = getBoolean(querySpecificConfig,
@@ -110,6 +112,7 @@ public class OptimizationConfUtil {
         physOptConf.setSortParallel(fullParallelSort);
         physOptConf.setSortSamples(sortNumSamples);
         physOptConf.setIndexOnly(indexOnly);
+        physOptConf.setRewriteOrToJoin(rewriteOrToJoin);
         physOptConf.setSanityCheckEnabled(sanityCheck);
         physOptConf.setExternalFieldPushdown(externalFieldPushdown);
         physOptConf.setSubplanMerge(subplanMerge);

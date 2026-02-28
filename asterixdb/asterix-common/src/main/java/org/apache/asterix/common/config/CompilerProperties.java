@@ -158,7 +158,11 @@ public class CompilerProperties extends AbstractProperties {
                 128,
                 "Maximum occurrences of a variable allowed in an expression for inlining"),
         COMPILER_ORDERED_FIELDS(BOOLEAN, AlgebricksConfig.ORDERED_FIELDS, "Enable/disable select order list"),
-        COMPILER_DELTALAKE_FILESPLITS(BOOLEAN, false, "Enable/disable delta lake file splits");
+        COMPILER_DELTALAKE_FILESPLITS(BOOLEAN, false, "Enable/disable delta lake file splits"),
+        COMPILER_REWRITE_DISJUNCTION(
+                BOOLEAN,
+                AlgebricksConfig.REWRITE_DISJUNCTION_DEFAULT,
+                "Set the mode for rewriting disjunctions to joins in query plans");
 
         private final IOptionType type;
         private final Object defaultValue;
@@ -213,6 +217,7 @@ public class CompilerProperties extends AbstractProperties {
     public static final String COMPILER_SORT_SAMPLES_KEY = Option.COMPILER_SORT_SAMPLES.ini();
 
     public static final String COMPILER_INDEXONLY_KEY = Option.COMPILER_INDEXONLY.ini();
+    public static final String COMPILER_REWRITE_DISJUNCTION_KEY = Option.COMPILER_REWRITE_DISJUNCTION.ini();
 
     public static final String COMPILER_INTERNAL_SANITYCHECK_KEY = Option.COMPILER_INTERNAL_SANITYCHECK.ini();
 
@@ -310,6 +315,10 @@ public class CompilerProperties extends AbstractProperties {
 
     public boolean isIndexOnly() {
         return accessor.getBoolean(Option.COMPILER_INDEXONLY);
+    }
+
+    public boolean rewriteDisjunctionToJoin() {
+        return accessor.getBoolean(Option.COMPILER_REWRITE_DISJUNCTION);
     }
 
     public boolean isSanityCheck() {

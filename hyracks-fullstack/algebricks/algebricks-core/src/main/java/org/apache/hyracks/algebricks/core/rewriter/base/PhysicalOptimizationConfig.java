@@ -45,6 +45,7 @@ public class PhysicalOptimizationConfig {
     private static final String SORT_PARALLEL = "SORT_PARALLEL";
     private static final String SORT_SAMPLES = "SORT_SAMPLES";
     private static final String INDEX_ONLY = "INDEX_ONLY";
+    private static final String REWRITE_OR_TO_JOIN = "REWRITE_OR_TO_JOIN";
     private static final String SANITY_CHECK = "SANITY_CHECK";
     private static final String EXTERNAL_FIELD_PUSHDOWN = "EXTERNAL_FIELD_PUSHDOWN";
     private static final String SUBPLAN_MERGE = "SUBPLAN_MERGE";
@@ -260,6 +261,14 @@ public class PhysicalOptimizationConfig {
 
     public void setIndexOnly(boolean indexOnly) {
         setBoolean(INDEX_ONLY, indexOnly);
+    }
+
+    public void setRewriteOrToJoin(boolean rewriteDisjunction) {
+        setBoolean(REWRITE_OR_TO_JOIN, rewriteDisjunction);
+    }
+
+    public boolean rewriteOrToJoin() {
+        return getBoolean(REWRITE_OR_TO_JOIN, AlgebricksConfig.REWRITE_DISJUNCTION_DEFAULT);
     }
 
     public boolean isIndexOnly() {
