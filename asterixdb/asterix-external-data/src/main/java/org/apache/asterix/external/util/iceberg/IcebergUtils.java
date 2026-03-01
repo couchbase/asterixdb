@@ -30,6 +30,7 @@ import static org.apache.asterix.external.util.iceberg.IcebergConstants.ICEBERG_
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -51,11 +52,13 @@ import org.apache.asterix.external.util.iceberg.nessie.NessieUtils;
 import org.apache.asterix.external.util.iceberg.rest.RestUtils;
 import org.apache.asterix.om.types.ARecordType;
 import org.apache.iceberg.CatalogProperties;
+import org.apache.iceberg.Table;
 import org.apache.iceberg.aws.AwsProperties;
 import org.apache.iceberg.aws.glue.GlueCatalog;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.SupportsNamespaces;
+import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.nessie.NessieCatalog;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.apache.logging.log4j.LogManager;
@@ -395,5 +398,56 @@ public class IcebergUtils {
         for (Map.Entry<String, String> entry : toAdd.entrySet()) {
             addTo.putIfAbsent(ICEBERG_CATALOG_PROPERTY_PREFIX_INTERNAL + entry.getKey(), entry.getValue());
         }
+    }
+
+    public static List<Namespace> listNamespaces(Catalog catalog, CatalogConfig.IcebergCatalogSource source) {
+        return switch (source) {
+            case AWS_GLUE -> {
+                GlueCatalog glueCatalog = (GlueCatalog) catalog;
+                yield glueCatalog.listNamespaces();
+            }
+            case REST, AWS_GLUE_REST, BIGLAKE_METASTORE, S3_TABLES, NESSIE_REST -> {
+                RESTCatalog restCatalog = (RESTCatalog) catalog;
+                yield restCatalog.listNamespaces();
+            }
+            case NESSIE -> {
+                NessieCatalog nessieCatalog = (NessieCatalog) catalog;
+                yield nessieCatalog.listNamespaces();
+            }
+        };
+    }
+
+    public static List<TableIdentifier> listTables(Catalog catalog, Namespace namespace, CatalogConfig.IcebergCatalogSource source) {
+        return switch (source) {
+            case AWS_GLUE -> {
+                GlueCatalog glueCatalog = (GlueCatalog) catalog;
+                yield glueCatalog.listTables(namespace);
+            }
+            case REST, AWS_GLUE_REST, BIGLAKE_METASTORE, S3_TABLES, NESSIE_REST -> {
+                RESTCatalog restCatalog = (RESTCatalog) catalog;
+                yield restCatalog.listTables(namespace);
+            }
+            case NESSIE -> {
+                NessieCatalog nessieCatalog = (NessieCatalog) catalog;
+                yield nessieCatalog.listTables(namespace);
+            }
+        };
+    }
+
+    public static Table loadTable(Catalog catalog, TableIdentifier tableIdentifier, CatalogConfig.IcebergCatalogSource source) {
+        return switch (source) {
+            case AWS_GLUE -> {
+                GlueCatalog glueCatalog = (GlueCatalog) catalog;
+                yield glueCatalog.loadTable(tableIdentifier);
+            }
+            case REST, AWS_GLUE_REST, BIGLAKE_METASTORE, S3_TABLES, NESSIE_REST -> {
+                RESTCatalog restCatalog = (RESTCatalog) catalog;
+                yield restCatalog.loadTable(tableIdentifier);
+            }
+            case NESSIE -> {
+                NessieCatalog nessieCatalog = (NessieCatalog) catalog;
+                yield nessieCatalog.loadTable(tableIdentifier);
+            }
+        };
     }
 }

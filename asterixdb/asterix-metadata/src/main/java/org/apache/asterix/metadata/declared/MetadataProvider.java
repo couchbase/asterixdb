@@ -1029,7 +1029,7 @@ public class MetadataProvider implements IMetadataProvider<DataSourceId, String>
             String catalogName = configuration.get(IcebergConstants.ICEBERG_CATALOG_NAME);
             IcebergCatalog catalog =
                     (IcebergCatalog) MetadataManager.INSTANCE.getCatalog(getMetadataTxnContext(), catalogName);
-            IcebergCatalogDetails details = (IcebergCatalogDetails) catalog.getCatalogDetails();
+            IcebergCatalogDetails details = catalog.getCatalogDetails();
             IcebergUtils.putCatalogProperties(configuration, details.getProperties());
         }
     }
