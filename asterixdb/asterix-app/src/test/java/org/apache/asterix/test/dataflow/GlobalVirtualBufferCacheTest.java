@@ -155,7 +155,7 @@ public class GlobalVirtualBufferCacheTest {
             }
             if (exceptionRef.get() != null) {
                 exceptionRef.get().printStackTrace();
-                Assert.fail("Exception in insert threads: " + exceptionRef.get().getMessage());
+                Assert.fail("Exception in insert threads: " + exceptionRef.get());
             }
             for (int i = 0; i < NUM_PARTITIONS; i++) {
                 List<ILSMDiskComponent> diskComponents = new ArrayList<>(primaryIndexes[i].getDiskComponents());
