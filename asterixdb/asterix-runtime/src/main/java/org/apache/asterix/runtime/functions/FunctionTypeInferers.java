@@ -116,6 +116,12 @@ public final class FunctionTypeInferers {
         }
     };
 
+    public static final IFunctionTypeInferer SET_OR_TYPES = (expr, fd, context, compilerProps) -> {
+        AbstractFunctionCallExpression fce = (AbstractFunctionCallExpression) expr;
+        IAType elementType = (IAType) context.getType(fce.getArguments().get(1).getValue());
+        fd.setImmutableStates(TypeComputeUtils.getActualType(elementType));
+    };
+
     public static final IFunctionTypeInferer MEDIAN_MEMORY =
             (expr, fd, context, compilerProps) -> fd.setImmutableStates(compilerProps.getSortMemoryFrames());
 
