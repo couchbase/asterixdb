@@ -52,6 +52,7 @@
     "compiler\.indexonly" : true,
     "compiler\.internal\.sanitycheck" : true,
     "compiler\.joinmemory" : 262144,
+    "compiler\.max\.expression\.tree\.size" : 10000,
     "compiler\.max\.variable\.occurrences\.inlining" : 128,
     "compiler.min.groupmemory" : 524288,
     "compiler.min.joinmemory" : 524288,

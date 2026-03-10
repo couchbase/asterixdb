@@ -64,6 +64,7 @@ public class PhysicalOptimizationConfig {
     private static final String MIN_GROUP_FRAMES = "MIN_GROUP_FRAMES";
     private static final String MIN_WINDOW_FRAMES = "MIN_WINDOW_FRAMES";
     private static final String MAX_VARIABLE_OCCURRENCES_INLINING = "MAX_VARIABLE_OCCURRENCES_INLINING";
+    private static final String MAX_EXPRESSION_TREE_SIZE = "MAX_EXPRESSION_TREE_SIZE";
 
     private static final String ORDER_FIELDS = "ORDERED_FIELDS";
 
@@ -409,6 +410,14 @@ public class PhysicalOptimizationConfig {
 
     public void setMaxVariableOccurrencesForInlining(int maxVariableOccurrencesForInlining) {
         setInt(MAX_VARIABLE_OCCURRENCES_INLINING, maxVariableOccurrencesForInlining);
+    }
+
+    public int getMaxExpressionTreeSize() {
+        return getInt(MAX_EXPRESSION_TREE_SIZE, AlgebricksConfig.MAX_EXPRESSION_TREE_SIZE_DEFAULT);
+    }
+
+    public void setMaxExpressionTreeSize(int maxExpressionTreeSize) {
+        setInt(MAX_EXPRESSION_TREE_SIZE, maxExpressionTreeSize);
     }
 
     private void setInt(String property, int value) {
