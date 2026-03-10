@@ -6051,6 +6051,13 @@
       </compilation-unit>
     </test-case>
   </test-group>
+  <test-group name="hash-based-or">
+  <test-case FilePath="hash-based-or">
+    <compilation-unit name="hash-based-or">
+      <output-dir compare="Text">hash-based-or</output-dir>
+    </compilation-unit>
+  </test-case>
+  </test-group>
   <test-group name="group-by">
     <test-case FilePath="group-by">
       <compilation-unit name="gby-array">

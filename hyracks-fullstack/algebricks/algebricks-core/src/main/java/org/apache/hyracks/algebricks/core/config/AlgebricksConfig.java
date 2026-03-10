@@ -50,6 +50,5 @@ public class AlgebricksConfig {
     public static final boolean ORDERED_FIELDS = true;
     public static final int MAX_VARIABLE_OCCURRENCES_INLINING_DEFAULT = 128;
     public static final int HASH_BASED_OR_THRESHOLD_DEFAULT = -1;
-    public static final String HASH_BASED_OR_OPTION = "hash_based_or";
     public static final int MAX_EXPRESSION_TREE_SIZE_DEFAULT = 10000;
 }

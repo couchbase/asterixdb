@@ -142,11 +142,9 @@ public final class FunctionTypeInferers {
                 CompilerProperties compilerProps, IMetadataProvider<?, ?> mp) throws AlgebricksException {
             int hashBasedThreshold;
             Map<String, Object> config = mp.getConfig();
-            if (config.containsKey(CompilerProperties.COMPILER_DISJUNCTION_HASH_THRESHOLD)) {
-                Object hashBasedOptionFromQuery = config.get(CompilerProperties.COMPILER_DISJUNCTION_HASH_THRESHOLD);
-                hashBasedThreshold =
-                        (hashBasedOptionFromQuery != null) ? Integer.parseInt(String.valueOf(hashBasedOptionFromQuery))
-                                : compilerProps.getHashBasedORThreshold();
+            Object hashBasedOptionFromQuery = config.get(CompilerProperties.COMPILER_DISJUNCTION_HASH_THRESHOLD);
+            if (hashBasedOptionFromQuery != null) {
+                hashBasedThreshold = Integer.parseInt(String.valueOf(hashBasedOptionFromQuery));
             } else {
                 hashBasedThreshold = compilerProps.getHashBasedORThreshold();
             }
@@ -159,6 +157,25 @@ public final class FunctionTypeInferers {
         }
     };
 
+    /**
+     * Determines if the OR expression can be optimized using hash-based evaluation.
+     * <p>Using the hash-based OR is only possible if we have:
+     * <ul>
+     *   <li>All arguments are equality comparisons (EQ function calls with exactly 2 arguments)</li>
+     *   <li>Each EQ has exactly one constant operand and one non-constant operand</li>
+     *   <li>All non-constant operands are identical across all EQs</li>
+     *   <li>All constant operands have mutually compatible types that can share the same hash function</li>
+     * </ul>
+     * <p>Examples of non-optimizable expressions:
+     * <ul>
+     *   <li>{@code EQ(a, 1) OR EQ(b = 2)} (different variables)</li>
+     *   <li>{@code EQ(a, 1) OR EQ(a = "2")} (incompatible constant types)</li>
+     *   <li>{@code EQ(a, 1) OR EQ(a = null)} (null is not compatible with integer)</li>
+     * </ul>
+     *
+     * @param funcExpr the OR function expression
+     * @return the element type for hash-based comparison, or null if optimization is not applicable
+     */
     private static IAType useHashBased(AbstractFunctionCallExpression funcExpr, int hashBasedThreshold) {
         List<Mutable<ILogicalExpression>> orArgs = funcExpr.getArguments();
         if (hashBasedThreshold < 0 || orArgs.size() < 2 || orArgs.size() < hashBasedThreshold) {
