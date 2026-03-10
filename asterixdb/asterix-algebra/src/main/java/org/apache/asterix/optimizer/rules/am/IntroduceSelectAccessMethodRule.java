@@ -504,6 +504,10 @@ public class IntroduceSelectAccessMethodRule extends AbstractIntroduceAccessMeth
             // whether an available index can be applicable or not.
             if (!checkApplicableOnly && continueCheck) {
                 analyzedAMs = new TreeMap<>();
+                // we need to clear the chosenIndexes as well, if we do not
+                // in nested queries we might get to a situation where we
+                // have chosenIndexes from the previous check.
+                chosenIndexes = new ArrayList<>();
             }
 
             if (continueCheck && context.getPhysicalOptimizationConfig().isArrayIndexEnabled()
