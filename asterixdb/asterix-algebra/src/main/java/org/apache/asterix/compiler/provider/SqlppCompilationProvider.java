@@ -43,6 +43,7 @@ import org.apache.asterix.optimizer.rules.cbo.JoinEnum;
 import org.apache.asterix.optimizer.rules.util.EquivalenceClassUtils;
 import org.apache.asterix.translator.SqlppExpressionToPlanTranslator;
 import org.apache.asterix.translator.SqlppExpressionToPlanTranslatorFactory;
+import org.apache.hyracks.algebricks.rewriter.rules.ExtractCommonOperatorsRule;
 
 public class SqlppCompilationProvider implements ILangCompilationProvider {
 
@@ -107,6 +108,7 @@ public class SqlppCompilationProvider implements ILangCompilationProvider {
                 DisjunctivePredicateToJoinRule.REWRITE_OR_AS_JOIN_OPTION,
                 SetAsterixPhysicalOperatorsRule.REWRITE_ATTEMPT_BATCH_ASSIGN,
                 EquivalenceClassUtils.REWRITE_INTERNAL_QUERYUID_PK, SqlppQueryRewriter.SQL_COMPAT_OPTION,
-                JoinEnum.CBO_FULL_ENUM_LEVEL_KEY, JoinEnum.CBO_CP_ENUM_KEY));
+                JoinEnum.CBO_FULL_ENUM_LEVEL_KEY, JoinEnum.CBO_CP_ENUM_KEY,
+                ExtractCommonOperatorsRule.EXTRACT_COMMON_OPS));
     }
 }
