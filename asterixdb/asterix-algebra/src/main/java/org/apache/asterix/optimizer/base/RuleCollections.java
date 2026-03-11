@@ -55,7 +55,6 @@ import org.apache.asterix.optimizer.rules.FindDataSourcesRule;
 import org.apache.asterix.optimizer.rules.FixReplicateOperatorOutputsRule;
 import org.apache.asterix.optimizer.rules.FullTextContainsParameterCheckAndSetRule;
 import org.apache.asterix.optimizer.rules.FuzzyEqRule;
-import org.apache.asterix.optimizer.rules.HashBasedOrRule;
 import org.apache.asterix.optimizer.rules.InjectTypeCastForFunctionArgumentsRule;
 import org.apache.asterix.optimizer.rules.InjectTypeCastForUnionRule;
 import org.apache.asterix.optimizer.rules.InlineUnnestFunctionRule;
@@ -470,7 +469,7 @@ public final class RuleCollections {
         prepareForJobGenRewrites.add(new EnsureColumnarSupportedTypesRule());
         // EmbedProjectRule should run last. The assumption is that this rules set will run once
         prepareForJobGenRewrites.add(new EmbedProjectRule());
-        prepareForJobGenRewrites.add(new HashBasedOrRule());
+        //prepareForJobGenRewrites.add(new HashBasedOrRule());
         return prepareForJobGenRewrites;
     }
 }
