@@ -144,6 +144,17 @@ public class UTF8StringPointableTest {
     }
 
     @Test
+    public void testFindWithOffset() throws HyracksDataException {
+        UTF8StringPointable src = generateUTF8Pointable("this is the king's palace");
+        UTF8StringPointable pattern = generateUTF8Pointable("'s");
+
+        // startMatchPos points to 'i' at byte offset 2 (index 2)
+        assertEquals(16, UTF8StringPointable.find(src, pattern, false, 2));
+        // code point difference: from index 2 to index 16 -> 14
+        assertEquals(14, UTF8StringPointable.findInCodePoint(src, pattern, false, 2));
+    }
+
+    @Test
     public void testContains() throws Exception {
         assertTrue(STRING_UTF8_MIX.contains(STRING_UTF8_MIX, false));
         assertTrue(STRING_UTF8_MIX.contains(STRING_UTF8_MIX, true));

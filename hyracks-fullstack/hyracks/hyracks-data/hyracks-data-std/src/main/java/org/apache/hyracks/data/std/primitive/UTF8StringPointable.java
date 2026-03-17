@@ -333,7 +333,7 @@ public final class UTF8StringPointable extends AbstractPointable implements IHas
         final int srcUtfLen = src.getUTF8Length();
         final int srcStart = src.getMetaDataLength();
         int codePointCount = 0;
-        int c1 = 0; // index in bytes for src
+        int c1 = startMatchPos; // index in bytes for src
         int j = 0; // index for patternChars
 
         boolean prevHigh = false;
@@ -343,27 +343,6 @@ public final class UTF8StringPointable extends AbstractPointable implements IHas
         int ringIdx = 0;
 
         while (c1 < srcUtfLen) {
-            if (c1 < startMatchPos) {
-                char ch = src.charAt(srcStart + c1);
-                c1 += src.charSize(srcStart + c1);
-                if (!resultInByte) {
-                    if (Character.isHighSurrogate(ch)) {
-                        prevHigh = true;
-                    } else if (Character.isLowSurrogate(ch)) {
-                        if (prevHigh) {
-                            codePointCount++;
-                            prevHigh = false;
-                        } else {
-                            throw HyracksDataException.create(INVALID_STRING_UNICODE,
-                                    LOW_SURROGATE_WITHOUT_HIGH_SURROGATE);
-                        }
-                    } else {
-                        codePointCount++;
-                    }
-                }
-                continue;
-            }
-
             char ch1 = src.charAt(srcStart + c1);
             char matchCh1 = (ignoreCase && !Character.isHighSurrogate(ch1) && !Character.isLowSurrogate(ch1))
                     ? Character.toLowerCase(ch1) : ch1;
