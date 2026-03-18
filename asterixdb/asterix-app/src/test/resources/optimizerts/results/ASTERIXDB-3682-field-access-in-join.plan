@@ -61,19 +61,19 @@ distribute result [$$485]
                                                             project ([$$503, $$527, $$505, $$333])
                                                             -- STREAM_PROJECT  |PARTITIONED|
                                                               subplan {
-                                                                        aggregate [$$333] <- [listify($$332)]
+                                                                        aggregate [$$333] <- [listify($$332)] [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                         -- AGGREGATE  |LOCAL|
-                                                                          assign [$$332] <- [{"marop": $$506, "t0": $$526}]
+                                                                          assign [$$332] <- [{"marop": $$506, "t0": $$526}] [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                           -- ASSIGN  |LOCAL|
-                                                                            select (and(eq($$525, "iap"), not(is-unknown($$506)))) project: [$$526, $$506]
+                                                                            select (and(eq($$525, "iap"), not(is-unknown($$506)))) project: [$$526, $$506] [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                             -- STREAM_SELECT  |LOCAL|
-                                                                              assign [$$526, $$506, $$525] <- [$$item2.getField("t0"), $$item2.getField("marop"), $$item2.getField("ua")] project: [$$526, $$506, $$525]
+                                                                              assign [$$526, $$506, $$525] <- [$$item2.getField("t0"), $$item2.getField("marop"), $$item2.getField("ua")] project: [$$526, $$506, $$525] [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                               -- ASSIGN  |LOCAL|
-                                                                                unnest $$item2 <- scan-collection($$524) project: [$$item2]
+                                                                                unnest $$item2 <- scan-collection($$524) project: [$$item2] [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                                 -- UNNEST  |LOCAL|
-                                                                                  project ([$$524])
+                                                                                  project ([$$524]) [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                                   -- STREAM_PROJECT  |LOCAL|
-                                                                                    nested tuple source
+                                                                                    nested tuple source [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                                     -- NESTED_TUPLE_SOURCE  |LOCAL|
                                                                      }
                                                               -- SUBPLAN  |PARTITIONED|
@@ -100,13 +100,13 @@ distribute result [$$485]
                                                                                     exchange
                                                                                     -- ONE_TO_ONE_EXCHANGE  |PARTITIONED|
                                                                                       group by ([$$589 := $$495]) decor ([$$515; $$503; $$527]) {
-                                                                                                aggregate [$$305] <- [non-empty-stream()]
+                                                                                                aggregate [$$305] <- [non-empty-stream()] [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                                                 -- AGGREGATE  |LOCAL|
-                                                                                                  select (not(is-missing($$588)))
+                                                                                                  select (not(is-missing($$588))) [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                                                   -- STREAM_SELECT  |LOCAL|
-                                                                                                    project ([$$588])
+                                                                                                    project ([$$588]) [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                                                     -- STREAM_PROJECT  |LOCAL|
-                                                                                                      nested tuple source
+                                                                                                      nested tuple source [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                                                       -- NESTED_TUPLE_SOURCE  |LOCAL|
                                                                                              }
                                                                                       -- PRE_CLUSTERED_GROUP_BY[$$495]  |PARTITIONED|
@@ -155,17 +155,17 @@ distribute result [$$485]
                                                                                                                   project ([$$587, $$294, $$303])
                                                                                                                   -- STREAM_PROJECT  |PARTITIONED|
                                                                                                                     subplan {
-                                                                                                                              aggregate [$$303] <- [non-empty-stream()]
+                                                                                                                              aggregate [$$303] <- [non-empty-stream()] [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                                                                               -- AGGREGATE  |LOCAL|
-                                                                                                                                select (and(eq($$522, "iap"), not(is-unknown($$521))))
+                                                                                                                                select (and(eq($$522, "iap"), not(is-unknown($$521)))) [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                                                                                 -- STREAM_SELECT  |LOCAL|
-                                                                                                                                  assign [$$522, $$521] <- [$$item2.getField("ua"), $$item2.getField("marop")] project: [$$522, $$521]
+                                                                                                                                  assign [$$522, $$521] <- [$$item2.getField("ua"), $$item2.getField("marop")] project: [$$522, $$521] [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                                                                                   -- ASSIGN  |LOCAL|
-                                                                                                                                    unnest $$item2 <- scan-collection($$520) project: [$$item2]
+                                                                                                                                    unnest $$item2 <- scan-collection($$520) project: [$$item2] [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                                                                                     -- UNNEST  |LOCAL|
-                                                                                                                                      project ([$$520])
+                                                                                                                                      project ([$$520]) [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                                                                                       -- STREAM_PROJECT  |LOCAL|
-                                                                                                                                        nested tuple source
+                                                                                                                                        nested tuple source [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                                                                                         -- NESTED_TUPLE_SOURCE  |LOCAL|
                                                                                                                            }
                                                                                                                     -- SUBPLAN  |PARTITIONED|
@@ -188,17 +188,29 @@ distribute result [$$485]
                                                                                                                                       empty-tuple-source
                                                                                                                                       -- EMPTY_TUPLE_SOURCE  |PARTITIONED|
                                                                                                               exchange
-                                                                                                              -- BROADCAST_EXCHANGE  |PARTITIONED|
-                                                                                                                unnest $$507 <- scan-collection(array: [ "X", "Y" ])
-                                                                                                                -- UNNEST  |UNPARTITIONED|
-                                                                                                                  empty-tuple-source
-                                                                                                                  -- EMPTY_TUPLE_SOURCE  |UNPARTITIONED|
+                                                                                                              -- ONE_TO_ONE_EXCHANGE  |PARTITIONED|
+                                                                                                                replicate
+                                                                                                                -- REPLICATE  |PARTITIONED|
+                                                                                                                  exchange
+                                                                                                                  -- BROADCAST_EXCHANGE  |PARTITIONED|
+                                                                                                                    unnest $$507 <- scan-collection(array: [ "X", "Y" ])
+                                                                                                                    -- UNNEST  |UNPARTITIONED|
+                                                                                                                      empty-tuple-source
+                                                                                                                      -- EMPTY_TUPLE_SOURCE  |UNPARTITIONED|
                                                                         exchange
-                                                                        -- BROADCAST_EXCHANGE  |PARTITIONED|
-                                                                          unnest $$508 <- scan-collection(array: [ "X", "Y" ])
-                                                                          -- UNNEST  |UNPARTITIONED|
-                                                                            empty-tuple-source
-                                                                            -- EMPTY_TUPLE_SOURCE  |UNPARTITIONED|
+                                                                        -- ONE_TO_ONE_EXCHANGE  |PARTITIONED|
+                                                                          assign [$$508] <- [$$507] project: [$$508]
+                                                                          -- ASSIGN  |PARTITIONED|
+                                                                            exchange
+                                                                            -- ONE_TO_ONE_EXCHANGE  |PARTITIONED|
+                                                                              replicate
+                                                                              -- REPLICATE  |PARTITIONED|
+                                                                                exchange
+                                                                                -- BROADCAST_EXCHANGE  |PARTITIONED|
+                                                                                  unnest $$507 <- scan-collection(array: [ "X", "Y" ])
+                                                                                  -- UNNEST  |UNPARTITIONED|
+                                                                                    empty-tuple-source
+                                                                                    -- EMPTY_TUPLE_SOURCE  |UNPARTITIONED|
                                               exchange
                                               -- HASH_PARTITION_EXCHANGE [$$uniqueID]  |PARTITIONED|
                                                 unnest $$uniqueID <- scan-collection($$543) project: [$$504, $$uniqueID]
@@ -236,15 +248,15 @@ distribute result [$$485]
                                             project ([$$551, $$547, $$554, $$549, $$424])
                                             -- STREAM_PROJECT  |PARTITIONED|
                                               subplan {
-                                                        aggregate [$$424] <- [listify($$423)]
+                                                        aggregate [$$424] <- [listify($$423)] [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                         -- AGGREGATE  |LOCAL|
-                                                          assign [$$423] <- [$$item.getField("wkps")]
+                                                          assign [$$423] <- [$$item.getField("wkps")] [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                           -- ASSIGN  |LOCAL|
-                                                            unnest $$item <- scan-collection($$548) project: [$$item]
+                                                            unnest $$item <- scan-collection($$548) project: [$$item] [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                             -- UNNEST  |LOCAL|
-                                                              project ([$$548])
+                                                              project ([$$548]) [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                               -- STREAM_PROJECT  |LOCAL|
-                                                                nested tuple source
+                                                                nested tuple source [cardinality: 0.0, doc-size: 0.0, op-cost: 0.0, total-cost: 0.0]
                                                                 -- NESTED_TUPLE_SOURCE  |LOCAL|
                                                      }
                                               -- SUBPLAN  |PARTITIONED|

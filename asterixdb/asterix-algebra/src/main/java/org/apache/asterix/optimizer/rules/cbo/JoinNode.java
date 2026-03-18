@@ -69,6 +69,7 @@ import org.apache.hyracks.algebricks.core.algebra.expressions.HashJoinExpression
 import org.apache.hyracks.algebricks.core.algebra.expressions.IExpressionAnnotation;
 import org.apache.hyracks.algebricks.core.algebra.expressions.PredicateCardinalityAnnotation;
 import org.apache.hyracks.algebricks.core.algebra.expressions.ScalarFunctionCallExpression;
+import org.apache.hyracks.algebricks.core.algebra.expressions.VariableReferenceExpression;
 import org.apache.hyracks.algebricks.core.algebra.functions.AlgebricksBuiltinFunctions;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractBinaryJoinOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DataSourceScanOperator;
@@ -650,9 +651,40 @@ public class JoinNode {
         ScalarFunctionCallExpression andExpr = new ScalarFunctionCallExpression(
                 BuiltinFunctions.getBuiltinFunctionInfo(AlgebricksBuiltinFunctions.AND));
 
+        Map<LogicalVariable, List<ILogicalExpression>> variableListMap =
+                new TreeMap<>(Comparator.comparingInt(LogicalVariable::getId));
         for (i = 0; i < pairs.size(); i++) {
-            IOptimizableFuncExpr expr = exprs.get(pairs.get(i).getFirst());
-            andExpr.getArguments().add(new MutableObject<>(expr.getFuncExpr()));
+            IOptimizableFuncExpr funcExpr = exprs.get(pairs.get(i).getFirst());
+            ILogicalExpression expr = funcExpr.getFuncExpr();
+            if (expr.getExpressionTag() == LogicalExpressionTag.FUNCTION_CALL) {
+                AbstractFunctionCallExpression afce = (AbstractFunctionCallExpression) expr;
+
+                if (afce.getFunctionIdentifier() == AlgebricksBuiltinFunctions.EQ) {
+                    for (Mutable<ILogicalExpression> arg : afce.getArguments()) {
+                        if (arg.get().getExpressionTag() == LogicalExpressionTag.VARIABLE) {
+                            LogicalVariable var = ((VariableReferenceExpression) arg.get()).getVariableReference();
+                            variableListMap.computeIfAbsent(var, k -> new ArrayList<>()).add(expr);
+                        }
+                    }
+                } else {
+                    andExpr.getArguments().add(new MutableObject<>(funcExpr.getFuncExpr()));
+                }
+
+            }
+
+        }
+
+        for (List<ILogicalExpression> exprList : variableListMap.values()) {
+            if (exprList.size() == 1) {
+                andExpr.getArguments().add(new MutableObject<>(exprList.get(0)));
+            } else {
+                ScalarFunctionCallExpression orExpr = new ScalarFunctionCallExpression(
+                        BuiltinFunctions.getBuiltinFunctionInfo(AlgebricksBuiltinFunctions.OR));
+                for (ILogicalExpression expr : exprList) {
+                    orExpr.getArguments().add(new MutableObject<>(expr));
+                }
+                andExpr.getArguments().add(new MutableObject<>(orExpr));
+            }
         }
         return andExpr;
     }

@@ -69,6 +69,8 @@ public class OptimizationConfUtil {
                 compilerProperties.getSortParallel());
         boolean indexOnly = getBoolean(querySpecificConfig, CompilerProperties.COMPILER_INDEXONLY_KEY,
                 compilerProperties.isIndexOnly());
+        boolean rewriteOrToJoin = getBoolean(querySpecificConfig, CompilerProperties.COMPILER_REWRITE_DISJUNCTION_KEY,
+                compilerProperties.rewriteDisjunctionToJoin());
         boolean sanityCheck = getBoolean(querySpecificConfig, CompilerProperties.COMPILER_INTERNAL_SANITYCHECK_KEY,
                 compilerProperties.isSanityCheck());
         boolean externalFieldPushdown = getBoolean(querySpecificConfig,
@@ -98,6 +100,7 @@ public class OptimizationConfUtil {
                 compilerProperties.isColumnFilter());
         int maxVariableOccurrencesForInlining =
                 getMaxVariableOccurrencesForInlining(compilerProperties, querySpecificConfig, sourceLoc);
+        int maxExpressionTreeSize = getMaxExpressionTreeSize(compilerProperties, querySpecificConfig, sourceLoc);
         boolean orderFields = getBoolean(querySpecificConfig, CompilerProperties.COMPILER_ORDERED_FIELDS_KEY,
                 compilerProperties.isOrderedFields());
 
@@ -111,6 +114,7 @@ public class OptimizationConfUtil {
         physOptConf.setSortParallel(fullParallelSort);
         physOptConf.setSortSamples(sortNumSamples);
         physOptConf.setIndexOnly(indexOnly);
+        physOptConf.setRewriteOrToJoin(rewriteOrToJoin);
         physOptConf.setSanityCheckEnabled(sanityCheck);
         physOptConf.setExternalFieldPushdown(externalFieldPushdown);
         physOptConf.setSubplanMerge(subplanMerge);
@@ -129,6 +133,7 @@ public class OptimizationConfUtil {
         physOptConf.setMinGroupFrames(compilerProperties.getMinGroupMemoryFrames());
         physOptConf.setMinWindowFrames(compilerProperties.getMinWindowMemoryFrames());
         physOptConf.setMaxVariableOccurrencesForInlining(maxVariableOccurrencesForInlining);
+        physOptConf.setMaxExpressionTreeSize(maxExpressionTreeSize);
         physOptConf.setOrderFields(orderFields);
 
         // We should have already validated the parameter names at this point...
@@ -247,6 +252,18 @@ public class OptimizationConfUtil {
         try {
             return valueInQuery == null ? compilerProperties.getMaxVariableOccurrencesForInlining()
                     : OptionTypes.NONNEGATIVE_INTEGER.parse(valueInQuery);
+        } catch (IllegalArgumentException e) {
+            throw AsterixException.create(ErrorCode.COMPILATION_ERROR, sourceLoc, e.getMessage());
+        }
+    }
+
+    private static int getMaxExpressionTreeSize(CompilerProperties compilerProperties,
+            Map<String, Object> querySpecificConfig, SourceLocation sourceLoc) throws AsterixException {
+        String valueInQuery =
+                (String) querySpecificConfig.get(CompilerProperties.COMPILER_MAX_EXPRESSION_TREE_SIZE_KEY);
+        try {
+            return valueInQuery == null ? compilerProperties.getMaxExpressionTreeSize()
+                    : OptionTypes.POSITIVE_INTEGER.parse(valueInQuery);
         } catch (IllegalArgumentException e) {
             throw AsterixException.create(ErrorCode.COMPILATION_ERROR, sourceLoc, e.getMessage());
         }

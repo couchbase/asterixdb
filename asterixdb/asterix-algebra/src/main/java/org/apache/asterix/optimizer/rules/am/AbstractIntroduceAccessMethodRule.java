@@ -66,6 +66,7 @@ import org.apache.hyracks.algebricks.core.algebra.base.LogicalOperatorTag;
 import org.apache.hyracks.algebricks.core.algebra.base.LogicalVariable;
 import org.apache.hyracks.algebricks.core.algebra.expressions.AbstractFunctionCallExpression;
 import org.apache.hyracks.algebricks.core.algebra.expressions.IVariableTypeEnvironment;
+import org.apache.hyracks.algebricks.core.algebra.expressions.VariableReferenceExpression;
 import org.apache.hyracks.algebricks.core.algebra.functions.AlgebricksBuiltinFunctions;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractLogicalOperator;
@@ -732,6 +733,78 @@ public abstract class AbstractIntroduceAccessMethodRule implements IAlgebraicRew
         }
     }
 
+    private boolean analyzeSelectOrJoinDisjunctionAndUpdateAnalyzedAM(AbstractFunctionCallExpression funcExpr,
+            List<AbstractLogicalOperator> assignsAndUnnests,
+            Map<IAccessMethod, AccessMethodAnalysisContext> analyzedAMs, IOptimizationContext context,
+            IVariableTypeEnvironment typeEnvironment) throws AlgebricksException {
+        boolean found = true;
+        LogicalVariable variable = null;
+        Map<IAccessMethod, AccessMethodAnalysisContext> disjuncAnalyzedAMs = new HashMap<>();
+        for (Mutable<ILogicalExpression> arg : funcExpr.getArguments()) {
+            ILogicalExpression argExpr = arg.get();
+            if (argExpr.getExpressionTag() != LogicalExpressionTag.FUNCTION_CALL) {
+                found = false;
+                break;
+            }
+            AbstractFunctionCallExpression argFuncExpr = (AbstractFunctionCallExpression) argExpr;
+            // Only EQ can be used in OR condition
+            if (argFuncExpr.getFunctionIdentifier() != AlgebricksBuiltinFunctions.EQ) {
+                found = false;
+                break;
+            }
+            ILogicalExpression arg1 = argFuncExpr.getArguments().get(0).get();
+            ILogicalExpression arg2 = argFuncExpr.getArguments().get(1).get();
+
+            if (arg1.getExpressionTag() == LogicalExpressionTag.VARIABLE
+                    && arg2.getExpressionTag() == LogicalExpressionTag.CONSTANT) {
+                if (variable == null) {
+                    variable = ((VariableReferenceExpression) arg1).getVariableReference();
+                } else if (!variable.equals(((VariableReferenceExpression) arg1).getVariableReference())) {
+                    // If the variable is different in different disjuncts, we cannot use index for this OR condition.
+                    found = false;
+                    break;
+                }
+
+            } else if (arg2.getExpressionTag() == LogicalExpressionTag.VARIABLE
+                    && arg1.getExpressionTag() == LogicalExpressionTag.CONSTANT) {
+                if (variable == null) {
+                    variable = ((VariableReferenceExpression) arg2).getVariableReference();
+                } else if (!variable.equals(((VariableReferenceExpression) arg2).getVariableReference())) {
+                    // If the variable is different in different disjuncts, we cannot use index for this OR condition.
+                    found = false;
+                    break;
+                }
+
+            } else {
+                found = false;
+                break;
+            }
+            if (!found) {
+                break;
+            }
+            boolean matchFound = analyzeSelectOrJoinOpConditionAndUpdateAnalyzedAM(argFuncExpr, assignsAndUnnests,
+                    disjuncAnalyzedAMs, context, typeEnvironment);
+            found = found && matchFound;
+            if (!found) {
+                break;
+            }
+        }
+
+        AccessMethodAnalysisContext disjuncAnalysisCtx = disjuncAnalyzedAMs.get(BTreeAccessMethod.INSTANCE);
+        if (found && disjuncAnalysisCtx != null) {
+            AccessMethodAnalysisContext analysisCtx = analyzedAMs.get(BTreeAccessMethod.INSTANCE);
+            if (analysisCtx == null) {
+                analysisCtx = new AccessMethodAnalysisContext();
+                analyzedAMs.put(BTreeAccessMethod.INSTANCE, analysisCtx);
+            }
+
+            for (IOptimizableFuncExpr optFuncExpr : disjuncAnalysisCtx.getMatchedFuncExprs()) {
+                analysisCtx.addMatchedFuncExpr(optFuncExpr);
+            }
+        }
+        return found;
+    }
+
     /**
      * Analyzes the given selection condition, filling analyzedAMs with
      * applicable access method types. At this point we are not yet consulting
@@ -745,9 +818,10 @@ public abstract class AbstractIntroduceAccessMethodRule implements IAlgebraicRew
             IVariableTypeEnvironment typeEnvironment) throws AlgebricksException {
         AbstractFunctionCallExpression funcExpr = (AbstractFunctionCallExpression) cond;
         FunctionIdentifier funcIdent = funcExpr.getFunctionIdentifier();
-        // TODO: We don't consider a disjunctive condition with an index yet since it's complex.
+        // Think about joins carefully ?
         if (funcIdent == AlgebricksBuiltinFunctions.OR) {
-            return false;
+            return analyzeSelectOrJoinDisjunctionAndUpdateAnalyzedAM(funcExpr, assignsAndUnnests, analyzedAMs, context,
+                    typeEnvironment);
         } else if (funcIdent == AlgebricksBuiltinFunctions.AND) {
             // This is the only case that the optimizer can check the given function's arguments to see
             // if one of its argument can utilize an index.

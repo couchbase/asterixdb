@@ -45,6 +45,7 @@ public class PhysicalOptimizationConfig {
     private static final String SORT_PARALLEL = "SORT_PARALLEL";
     private static final String SORT_SAMPLES = "SORT_SAMPLES";
     private static final String INDEX_ONLY = "INDEX_ONLY";
+    private static final String REWRITE_OR_TO_JOIN = "REWRITE_OR_TO_JOIN";
     private static final String SANITY_CHECK = "SANITY_CHECK";
     private static final String EXTERNAL_FIELD_PUSHDOWN = "EXTERNAL_FIELD_PUSHDOWN";
     private static final String SUBPLAN_MERGE = "SUBPLAN_MERGE";
@@ -63,6 +64,7 @@ public class PhysicalOptimizationConfig {
     private static final String MIN_GROUP_FRAMES = "MIN_GROUP_FRAMES";
     private static final String MIN_WINDOW_FRAMES = "MIN_WINDOW_FRAMES";
     private static final String MAX_VARIABLE_OCCURRENCES_INLINING = "MAX_VARIABLE_OCCURRENCES_INLINING";
+    private static final String MAX_EXPRESSION_TREE_SIZE = "MAX_EXPRESSION_TREE_SIZE";
 
     private static final String ORDER_FIELDS = "ORDERED_FIELDS";
 
@@ -262,6 +264,14 @@ public class PhysicalOptimizationConfig {
         setBoolean(INDEX_ONLY, indexOnly);
     }
 
+    public void setRewriteOrToJoin(boolean rewriteDisjunction) {
+        setBoolean(REWRITE_OR_TO_JOIN, rewriteDisjunction);
+    }
+
+    public boolean rewriteOrToJoin() {
+        return getBoolean(REWRITE_OR_TO_JOIN, AlgebricksConfig.REWRITE_DISJUNCTION_DEFAULT);
+    }
+
     public boolean isIndexOnly() {
         return getBoolean(INDEX_ONLY, AlgebricksConfig.INDEX_ONLY_DEFAULT);
     }
@@ -400,6 +410,14 @@ public class PhysicalOptimizationConfig {
 
     public void setMaxVariableOccurrencesForInlining(int maxVariableOccurrencesForInlining) {
         setInt(MAX_VARIABLE_OCCURRENCES_INLINING, maxVariableOccurrencesForInlining);
+    }
+
+    public int getMaxExpressionTreeSize() {
+        return getInt(MAX_EXPRESSION_TREE_SIZE, AlgebricksConfig.MAX_EXPRESSION_TREE_SIZE_DEFAULT);
+    }
+
+    public void setMaxExpressionTreeSize(int maxExpressionTreeSize) {
+        setInt(MAX_EXPRESSION_TREE_SIZE, maxExpressionTreeSize);
     }
 
     private void setInt(String property, int value) {

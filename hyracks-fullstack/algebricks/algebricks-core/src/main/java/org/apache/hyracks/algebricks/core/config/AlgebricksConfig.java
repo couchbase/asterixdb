@@ -38,6 +38,7 @@ public class AlgebricksConfig {
     public static final boolean CBO_DEFAULT = true;
     public static final boolean CBO_TEST_DEFAULT = false;
     public static final boolean FORCE_JOIN_ORDER_DEFAULT = false;
+    public static final boolean REWRITE_DISJUNCTION_DEFAULT = true;
     public static final String QUERY_PLAN_SHAPE_ZIGZAG = "zigzag";
     public static final String QUERY_PLAN_SHAPE_LEFTDEEP = "leftdeep";
     public static final String QUERY_PLAN_SHAPE_RIGHTDEEP = "rightdeep";
@@ -48,4 +49,7 @@ public class AlgebricksConfig {
     public static final boolean COLUMN_FILTER_DEFAULT = true;
     public static final boolean ORDERED_FIELDS = true;
     public static final int MAX_VARIABLE_OCCURRENCES_INLINING_DEFAULT = 128;
+    public static final String HASH_BASED_OR_OPTION = "hash_based_or";
+    public static final boolean HASH_BASED_OR_OPTION_DEFAULT = false;
+    public static final int MAX_EXPRESSION_TREE_SIZE_DEFAULT = 10000;
 }

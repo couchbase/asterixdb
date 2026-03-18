@@ -158,8 +158,17 @@ public class CompilerProperties extends AbstractProperties {
                 getRangedIntegerType(0, Integer.MAX_VALUE),
                 128,
                 "Maximum occurrences of a variable allowed in an expression for inlining"),
+        COMPILER_MAX_EXPRESSION_TREE_SIZE(
+                getRangedIntegerType(1, Integer.MAX_VALUE),
+                AlgebricksConfig.MAX_EXPRESSION_TREE_SIZE_DEFAULT,
+                "Maximum number of OR/AND arguments before skipping costly O(N^2) optimization passes "
+                        + "(e.g. constant folding, CSE) on large IN-list queries"),
         COMPILER_ORDERED_FIELDS(BOOLEAN, AlgebricksConfig.ORDERED_FIELDS, "Enable/disable select order list"),
-        COMPILER_DELTALAKE_FILESPLITS(BOOLEAN, false, "Enable/disable delta lake file splits");
+        COMPILER_DELTALAKE_FILESPLITS(BOOLEAN, false, "Enable/disable delta lake file splits"),
+        COMPILER_REWRITE_DISJUNCTION(
+                BOOLEAN,
+                AlgebricksConfig.REWRITE_DISJUNCTION_DEFAULT,
+                "Set the mode for rewriting disjunctions to joins in query plans");
 
         private final IOptionType type;
         private final Object defaultValue;
@@ -217,6 +226,8 @@ public class CompilerProperties extends AbstractProperties {
 
     public static final String COMPILER_INDEXONLY_KEY = Option.COMPILER_INDEX_COVERING.ini();
 
+    public static final String COMPILER_REWRITE_DISJUNCTION_KEY = Option.COMPILER_REWRITE_DISJUNCTION.ini();
+
     public static final String COMPILER_INTERNAL_SANITYCHECK_KEY = Option.COMPILER_INTERNAL_SANITYCHECK.ini();
 
     public static final String COMPILER_EXTERNAL_FIELD_PUSHDOWN_KEY = Option.COMPILER_EXTERNAL_FIELD_PUSHDOWN.ini();
@@ -245,6 +256,8 @@ public class CompilerProperties extends AbstractProperties {
 
     public static final String COMPILER_MAX_VARIABLE_OCCURRENCES_INLINING_KEY =
             Option.COMPILER_MAX_VARIABLE_OCCURRENCES_INLINING.ini();
+
+    public static final String COMPILER_MAX_EXPRESSION_TREE_SIZE_KEY = Option.COMPILER_MAX_EXPRESSION_TREE_SIZE.ini();
 
     public static final String COMPILER_ORDERED_FIELDS_KEY = Option.COMPILER_ORDERED_FIELDS.ini();
 
@@ -313,6 +326,10 @@ public class CompilerProperties extends AbstractProperties {
 
     public boolean isIndexOnly() {
         return accessor.getBoolean(Option.COMPILER_INDEX_COVERING);
+    }
+
+    public boolean rewriteDisjunctionToJoin() {
+        return accessor.getBoolean(Option.COMPILER_REWRITE_DISJUNCTION);
     }
 
     public boolean isSanityCheck() {
@@ -391,6 +408,10 @@ public class CompilerProperties extends AbstractProperties {
 
     public int getMaxVariableOccurrencesForInlining() {
         return accessor.getInt(Option.COMPILER_MAX_VARIABLE_OCCURRENCES_INLINING);
+    }
+
+    public int getMaxExpressionTreeSize() {
+        return accessor.getInt(Option.COMPILER_MAX_EXPRESSION_TREE_SIZE);
     }
 
     public boolean isDeltaLakeFileSplitsEnabled() {
