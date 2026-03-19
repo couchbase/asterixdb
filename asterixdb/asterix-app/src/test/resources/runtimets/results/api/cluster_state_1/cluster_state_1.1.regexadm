@@ -27,6 +27,7 @@
     "cloud.storage.bucket" : "",
     "cloud.storage.cache.policy" : "selective",
     "cloud.storage.debug.mode.enabled" : false,
+    "cloud.storage.certificates" : [ ],
     "cloud.storage.debug.sweep.threshold.size" : 1073741824,
     "cloud.storage.disable.ssl.verify" : false,
     "cloud.storage.disk.monitor.interval" : 120,
