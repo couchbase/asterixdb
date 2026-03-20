@@ -37,6 +37,7 @@ import org.apache.asterix.om.types.AOrderedListType;
 import org.apache.asterix.om.types.ATypeTag;
 import org.apache.asterix.om.types.BuiltinType;
 import org.apache.asterix.runtime.evaluators.base.AbstractScalarFunctionDynamicDescriptor;
+import org.apache.asterix.runtime.evaluators.functions.PointableHelper;
 import org.apache.asterix.runtime.exceptions.InvalidDataFormatException;
 import org.apache.asterix.runtime.exceptions.TypeMismatchException;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
@@ -100,10 +101,15 @@ public class STPolygonizeDescriptor extends AbstractScalarFunctionDynamicDescrip
         @Override
         @SuppressWarnings("unchecked")
         public void evaluate(IFrameTupleReference tuple, IPointable result) throws HyracksDataException {
+            resultStorage.reset();
             eval.evaluate(tuple, inputArg);
             byte[] bytes = inputArg.getByteArray();
             int offset = inputArg.getStartOffset();
             int len = inputArg.getLength();
+
+            if (PointableHelper.checkAndSetMissingOrNull(result, inputArg)) {
+                return;
+            }
 
             AOrderedListType type = new AOrderedListType(BuiltinType.AGEOMETRY, null);
             byte typeTag = inputArg.getByteArray()[inputArg.getStartOffset()];

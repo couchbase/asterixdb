@@ -1,0 +1,54 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+/* Standalone concrete descriptor functions with MISSING in every argument position.
+   All must propagate MISSING. */
+{
+  /* STBufferDescriptor (geom, distance) */
+  "st_buffer_0":                  is_missing(st_buffer(missing, 1.0)),
+  "st_buffer_1":                  is_missing(st_buffer(st_geom_from_text("POINT(0 0)"), missing)),
+  /* STDWithinDescriptor (geom0, geom1, distance) */
+  "st_dwithin_0":                 is_missing(st_dwithin(missing, st_geom_from_text("POINT(1 0)"), 2.0)),
+  "st_dwithin_1":                 is_missing(st_dwithin(st_geom_from_text("POINT(0 0)"), missing, 2.0)),
+  "st_dwithin_2":                 is_missing(st_dwithin(st_geom_from_text("POINT(0 0)"), st_geom_from_text("POINT(1 0)"), missing)),
+  /* STRelateDescriptor (geom0, geom1, matrix) */
+  "st_relate_0":                  is_missing(st_relate(missing, st_geom_from_text("POINT(1 0)"), "FF2FF1FF2")),
+  "st_relate_1":                  is_missing(st_relate(st_geom_from_text("POINT(0 0)"), missing, "FF2FF1FF2")),
+  "st_relate_2":                  is_missing(st_relate(st_geom_from_text("POINT(0 0)"), st_geom_from_text("POINT(1 0)"), missing)),
+  /* STGeomFromTextSRIDDescriptor (wkt_string, srid) */
+  "st_geom_from_text_srid_0":     is_missing(st_geom_from_text(missing, 4326)),
+  "st_geom_from_text_srid_1":     is_missing(st_geom_from_text("POINT(0 0)", missing)),
+  /* STMakePointDescriptor (x, y) */
+  "st_make_point_0":              is_missing(st_make_point(missing, 0.0)),
+  "st_make_point_1":              is_missing(st_make_point(0.0, missing)),
+  /* STMakePoint3DDescriptor (x, y, z) */
+  "st_make_point3d_0":            is_missing(st_make_point(missing, 0.0, 0.0)),
+  "st_make_point3d_1":            is_missing(st_make_point(0.0, missing, 0.0)),
+  "st_make_point3d_2":            is_missing(st_make_point(0.0, 0.0, missing)),
+  /* STMakePoint3DWithMDescriptor (x, y, z, m) */
+  "st_make_point3dm_0":           is_missing(st_make_point(missing, 0.0, 0.0, 0.0)),
+  "st_make_point3dm_1":           is_missing(st_make_point(0.0, missing, 0.0, 0.0)),
+  "st_make_point3dm_2":           is_missing(st_make_point(0.0, 0.0, missing, 0.0)),
+  "st_make_point3dm_3":           is_missing(st_make_point(0.0, 0.0, 0.0, missing)),
+  /* STMakeEnvelopeDescriptorSRID (xmin, ymin, xmax, ymax, srid) */
+  "st_make_envelope_0":           is_missing(st_make_envelope(missing, 0.0, 1.0, 1.0, 4326)),
+  "st_make_envelope_1":           is_missing(st_make_envelope(0.0, missing, 1.0, 1.0, 4326)),
+  "st_make_envelope_2":           is_missing(st_make_envelope(0.0, 0.0, missing, 1.0, 4326)),
+  "st_make_envelope_3":           is_missing(st_make_envelope(0.0, 0.0, 1.0, missing, 4326)),
+  "st_make_envelope_4":           is_missing(st_make_envelope(0.0, 0.0, 1.0, 1.0, missing))
+};

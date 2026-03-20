@@ -37,4 +37,14 @@
             <output-dir compare="Text">two-geometries</output-dir>
         </compilation-unit>
     </test-case>
+    <test-case FilePath="geojson">
+        <compilation-unit name="null-missing">
+            <output-dir compare="Text">null-missing</output-dir>
+        </compilation-unit>
+    </test-case>
+    <test-case FilePath="geojson">
+        <compilation-unit name="joins">
+            <output-dir compare="Text">joins</output-dir>
+        </compilation-unit>
+    </test-case>
 </test-group>

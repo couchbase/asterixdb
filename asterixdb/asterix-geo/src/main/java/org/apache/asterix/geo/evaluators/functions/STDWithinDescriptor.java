@@ -33,6 +33,7 @@ import org.apache.asterix.om.types.BuiltinType;
 import org.apache.asterix.om.types.EnumDeserializer;
 import org.apache.asterix.om.types.hierachy.ATypeHierarchy;
 import org.apache.asterix.runtime.evaluators.base.AbstractScalarFunctionDynamicDescriptor;
+import org.apache.asterix.runtime.evaluators.functions.PointableHelper;
 import org.apache.asterix.runtime.exceptions.InvalidDataFormatException;
 import org.apache.asterix.runtime.exceptions.TypeMismatchException;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
@@ -107,6 +108,10 @@ public class STDWithinDescriptor extends AbstractScalarFunctionDynamicDescriptor
             eval2.evaluate(tuple, inputArg2);
             byte[] bytes2 = inputArg2.getByteArray();
             int offset2 = inputArg2.getStartOffset();
+
+            if (PointableHelper.checkAndSetMissingOrNull(result, inputArg0, inputArg1, inputArg2)) {
+                return;
+            }
 
             ATypeTag tag = EnumDeserializer.ATYPETAGDESERIALIZER.deserialize(bytes0[offset0]);
             if (tag != ATypeTag.GEOMETRY) {

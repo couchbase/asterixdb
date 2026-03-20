@@ -1,0 +1,2 @@
+{ "id": 1, "address": "200 2nd Street", "location": {"type":"Point","coordinates":[2,2]} }
+{ "id": 2, "address": "900 Main Street", "location": {"type":"Point","coordinates":[9,9]} }

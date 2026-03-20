@@ -38,6 +38,7 @@ import org.apache.asterix.om.functions.IFunctionTypeInferer;
 import org.apache.asterix.om.types.ARecordType;
 import org.apache.asterix.om.types.ATypeTag;
 import org.apache.asterix.runtime.evaluators.base.AbstractScalarFunctionDynamicDescriptor;
+import org.apache.asterix.runtime.evaluators.functions.PointableHelper;
 import org.apache.asterix.runtime.exceptions.InvalidDataFormatException;
 import org.apache.asterix.runtime.exceptions.TypeMismatchException;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
@@ -112,10 +113,15 @@ public class ParseGeoJSONDescriptor extends AbstractScalarFunctionDynamicDescrip
 
         @Override
         public void evaluate(IFrameTupleReference tuple, IPointable result) throws HyracksDataException {
+            resultStorage.reset();
             eval.evaluate(tuple, inputArg);
             byte[] data = inputArg.getByteArray();
             int offset = inputArg.getStartOffset();
             int len = inputArg.getLength();
+
+            if (PointableHelper.checkAndSetMissingOrNull(result, inputArg)) {
+                return;
+            }
 
             if (data[offset] != ATypeTag.SERIALIZED_RECORD_TYPE_TAG) {
                 throw new TypeMismatchException(sourceLoc, BuiltinFunctions.GEOMETRY_CONSTRUCTOR, 0, data[offset],

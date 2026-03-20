@@ -27,6 +27,7 @@ import org.apache.asterix.dataflow.data.nontagged.serde.AGeometrySerializerDeser
 import org.apache.asterix.dataflow.data.nontagged.serde.AInt64SerializerDeserializer;
 import org.apache.asterix.om.types.ATypeTag;
 import org.apache.asterix.runtime.evaluators.base.AbstractScalarFunctionDynamicDescriptor;
+import org.apache.asterix.runtime.evaluators.functions.PointableHelper;
 import org.apache.asterix.runtime.exceptions.InvalidDataFormatException;
 import org.apache.asterix.runtime.exceptions.TypeMismatchException;
 import org.apache.hyracks.algebricks.runtime.base.IScalarEvaluator;
@@ -89,12 +90,16 @@ public abstract class AbstractSTGeometryNDescriptor extends AbstractScalarFuncti
             byte[] data0 = inputArg0.getByteArray();
             int offset0 = inputArg0.getStartOffset();
 
+            if (PointableHelper.checkAndSetMissingOrNull(result, inputArg, inputArg0)) {
+                return;
+            }
+
             if (data[offset] != ATypeTag.SERIALIZED_GEOMETRY_TYPE_TAG) {
                 throw new TypeMismatchException(sourceLoc, getIdentifier(), 0, data[offset],
                         ATypeTag.SERIALIZED_GEOMETRY_TYPE_TAG);
             }
             if (data0[offset0] != ATypeTag.SERIALIZED_INT64_TYPE_TAG) {
-                throw new TypeMismatchException(sourceLoc, getIdentifier(), 0, data0[offset0],
+                throw new TypeMismatchException(sourceLoc, getIdentifier(), 1, data0[offset0],
                         ATypeTag.SERIALIZED_INT64_TYPE_TAG);
             }
 

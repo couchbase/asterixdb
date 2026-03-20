@@ -1,0 +1,3 @@
+{ "did": 1, "dname": "District5", "bid": 1, "baddr": "200 2nd Street" }
+{ "did": 2, "dname": "District10", "bid": 1, "baddr": "200 2nd Street" }
+{ "did": 2, "dname": "District10", "bid": 2, "baddr": "900 Main Street" }

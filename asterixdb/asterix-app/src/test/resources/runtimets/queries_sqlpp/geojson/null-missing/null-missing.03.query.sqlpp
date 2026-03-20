@@ -1,0 +1,58 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+/* Two-argument and geometry-N functions with NULL in each argument position.
+   Suffix _0 = NULL in arg0, _1 = NULL in arg1. All must return NULL. */
+{
+  /* AbstractSTDoubleGeometryDescriptor subclasses */
+  "st_contains_0":         st_contains(null, st_geom_from_text("POINT(0 0)")),
+  "st_contains_1":         st_contains(st_geom_from_text("POINT(0 0)"), null),
+  "st_crosses_0":          st_crosses(null, st_geom_from_text("LINESTRING(0 0, 1 1)")),
+  "st_crosses_1":          st_crosses(st_geom_from_text("LINESTRING(0 0, 1 1)"), null),
+  "st_difference_0":       st_difference(null, st_geom_from_text("POINT(0 0)")),
+  "st_difference_1":       st_difference(st_geom_from_text("POINT(0 0)"), null),
+  "st_disjoint_0":         st_disjoint(null, st_geom_from_text("POINT(0 0)")),
+  "st_disjoint_1":         st_disjoint(st_geom_from_text("POINT(0 0)"), null),
+  "st_distance_0":         st_distance(null, st_geom_from_text("POINT(0 0)")),
+  "st_distance_1":         st_distance(st_geom_from_text("POINT(0 0)"), null),
+  "st_distance_sphere_0":  st_distance_sphere(null, st_geom_from_text("POINT(0 0)")),
+  "st_distance_sphere_1":  st_distance_sphere(st_geom_from_text("POINT(0 0)"), null),
+  "st_equals_0":           st_equals(null, st_geom_from_text("POINT(0 0)")),
+  "st_equals_1":           st_equals(st_geom_from_text("POINT(0 0)"), null),
+  "st_intersection_0":     st_intersection(null, st_geom_from_text("POINT(0 0)")),
+  "st_intersection_1":     st_intersection(st_geom_from_text("POINT(0 0)"), null),
+  "st_intersects_0":       st_intersects(null, st_geom_from_text("POINT(0 0)")),
+  "st_intersects_1":       st_intersects(st_geom_from_text("POINT(0 0)"), null),
+  "st_overlaps_0":         st_overlaps(null, st_geom_from_text("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))")),
+  "st_overlaps_1":         st_overlaps(st_geom_from_text("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"), null),
+  "st_sym_difference_0":   st_sym_difference(null, st_geom_from_text("POINT(0 0)")),
+  "st_sym_difference_1":   st_sym_difference(st_geom_from_text("POINT(0 0)"), null),
+  "st_touches_0":          st_touches(null, st_geom_from_text("POINT(0 0)")),
+  "st_touches_1":          st_touches(st_geom_from_text("POINT(0 0)"), null),
+  "st_union_0":            st_union(null, st_geom_from_text("POINT(0 0)")),
+  "st_union_1":            st_union(st_geom_from_text("POINT(0 0)"), null),
+  "st_within_0":           st_within(null, st_geom_from_text("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))")),
+  "st_within_1":           st_within(st_geom_from_text("POINT(0 0)"), null),
+  /* AbstractSTGeometryNDescriptor subclasses (geom, int64) */
+  "st_geometry_n_0":       st_geometry_n(null, 1),
+  "st_geometry_n_1":       st_geometry_n(st_geom_from_text("GEOMETRYCOLLECTION(POINT(0 0), LINESTRING(0 0, 1 1))"), null),
+  "st_point_n_0":          st_point_n(null, 1),
+  "st_point_n_1":          st_point_n(st_geom_from_text("LINESTRING(0 0, 1 1)"), null),
+  "st_interior_ring_n_0":  st_interior_ring_n(null, 1),
+  "st_interior_ring_n_1":  st_interior_ring_n(st_geom_from_text("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"), null)
+};

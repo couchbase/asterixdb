@@ -30,6 +30,7 @@ import org.apache.asterix.om.types.ATypeTag;
 import org.apache.asterix.om.types.EnumDeserializer;
 import org.apache.asterix.om.types.hierachy.ATypeHierarchy;
 import org.apache.asterix.runtime.evaluators.base.AbstractScalarFunctionDynamicDescriptor;
+import org.apache.asterix.runtime.evaluators.functions.PointableHelper;
 import org.apache.asterix.runtime.exceptions.InvalidDataFormatException;
 import org.apache.asterix.runtime.exceptions.TypeMismatchException;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
@@ -94,6 +95,10 @@ public class STBufferDescriptor extends AbstractScalarFunctionDynamicDescriptor 
             eval1.evaluate(tuple, inputArg1);
             byte[] bytes1 = inputArg1.getByteArray();
             int offset1 = inputArg1.getStartOffset();
+
+            if (PointableHelper.checkAndSetMissingOrNull(result, inputArg0, inputArg1)) {
+                return;
+            }
 
             ATypeTag tag = EnumDeserializer.ATYPETAGDESERIALIZER.deserialize(bytes0[offset0]);
             if (tag != ATypeTag.GEOMETRY) {

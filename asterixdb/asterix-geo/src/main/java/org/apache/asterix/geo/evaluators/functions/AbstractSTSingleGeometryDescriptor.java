@@ -33,6 +33,7 @@ import org.apache.asterix.om.types.ATypeTag;
 import org.apache.asterix.om.types.BuiltinType;
 import org.apache.asterix.om.types.EnumDeserializer;
 import org.apache.asterix.runtime.evaluators.base.AbstractScalarFunctionDynamicDescriptor;
+import org.apache.asterix.runtime.evaluators.functions.PointableHelper;
 import org.apache.asterix.runtime.exceptions.TypeMismatchException;
 import org.apache.hyracks.algebricks.runtime.base.IScalarEvaluator;
 import org.apache.hyracks.algebricks.runtime.base.IScalarEvaluatorFactory;
@@ -85,6 +86,10 @@ public abstract class AbstractSTSingleGeometryDescriptor extends AbstractScalarF
         public void evaluate(IFrameTupleReference tuple, IPointable result) throws HyracksDataException {
             resultStorage.reset();
             eval0.evaluate(tuple, argPtr0);
+
+            if (PointableHelper.checkAndSetMissingOrNull(result, argPtr0)) {
+                return;
+            }
 
             try {
                 byte[] bytes0 = argPtr0.getByteArray();

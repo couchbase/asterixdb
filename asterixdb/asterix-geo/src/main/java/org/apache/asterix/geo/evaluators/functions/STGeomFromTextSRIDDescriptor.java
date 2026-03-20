@@ -29,6 +29,7 @@ import org.apache.asterix.om.functions.BuiltinFunctions;
 import org.apache.asterix.om.functions.IFunctionDescriptorFactory;
 import org.apache.asterix.om.types.ATypeTag;
 import org.apache.asterix.runtime.evaluators.base.AbstractScalarFunctionDynamicDescriptor;
+import org.apache.asterix.runtime.evaluators.functions.PointableHelper;
 import org.apache.asterix.runtime.exceptions.InvalidDataFormatException;
 import org.apache.asterix.runtime.exceptions.TypeMismatchException;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
@@ -89,6 +90,7 @@ public class STGeomFromTextSRIDDescriptor extends AbstractScalarFunctionDynamicD
 
         @Override
         public void evaluate(IFrameTupleReference tuple, IPointable result) throws HyracksDataException {
+            resultStorage.reset();
             eval.evaluate(tuple, inputArg);
             byte[] data = inputArg.getByteArray();
             int offset = inputArg.getStartOffset();
@@ -98,12 +100,16 @@ public class STGeomFromTextSRIDDescriptor extends AbstractScalarFunctionDynamicD
             byte[] data0 = inputArg0.getByteArray();
             int offset0 = inputArg0.getStartOffset();
 
+            if (PointableHelper.checkAndSetMissingOrNull(result, inputArg, inputArg0)) {
+                return;
+            }
+
             if (data[offset] != ATypeTag.SERIALIZED_STRING_TYPE_TAG) {
                 throw new TypeMismatchException(sourceLoc, getIdentifier(), 0, data[offset],
                         ATypeTag.SERIALIZED_STRING_TYPE_TAG);
             }
             if (data0[offset0] != ATypeTag.SERIALIZED_INT64_TYPE_TAG) {
-                throw new TypeMismatchException(sourceLoc, getIdentifier(), 0, data0[offset0],
+                throw new TypeMismatchException(sourceLoc, getIdentifier(), 1, data0[offset0],
                         ATypeTag.SERIALIZED_INT64_TYPE_TAG);
             }
 

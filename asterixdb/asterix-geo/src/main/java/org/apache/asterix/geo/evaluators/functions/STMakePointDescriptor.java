@@ -25,6 +25,7 @@ import org.apache.asterix.dataflow.data.nontagged.serde.AGeometrySerializerDeser
 import org.apache.asterix.om.functions.BuiltinFunctions;
 import org.apache.asterix.om.functions.IFunctionDescriptorFactory;
 import org.apache.asterix.om.types.ATypeTag;
+import org.apache.asterix.runtime.evaluators.functions.PointableHelper;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
 import org.apache.hyracks.algebricks.runtime.base.IScalarEvaluator;
 import org.apache.hyracks.algebricks.runtime.base.IScalarEvaluatorFactory;
@@ -85,6 +86,10 @@ public class STMakePointDescriptor extends AbstractGetValDescriptor {
         public void evaluate(IFrameTupleReference tuple, IPointable result) throws HyracksDataException {
             eval0.evaluate(tuple, inputArg0);
             eval1.evaluate(tuple, inputArg1);
+
+            if (PointableHelper.checkAndSetMissingOrNull(result, inputArg0, inputArg1)) {
+                return;
+            }
 
             byte[] bytes0 = inputArg0.getByteArray();
             int offset0 = inputArg0.getStartOffset();

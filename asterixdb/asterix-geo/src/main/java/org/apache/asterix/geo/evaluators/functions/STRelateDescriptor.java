@@ -33,6 +33,7 @@ import org.apache.asterix.om.types.ATypeTag;
 import org.apache.asterix.om.types.BuiltinType;
 import org.apache.asterix.om.types.EnumDeserializer;
 import org.apache.asterix.runtime.evaluators.base.AbstractScalarFunctionDynamicDescriptor;
+import org.apache.asterix.runtime.evaluators.functions.PointableHelper;
 import org.apache.asterix.runtime.exceptions.InvalidDataFormatException;
 import org.apache.asterix.runtime.exceptions.TypeMismatchException;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
@@ -93,6 +94,7 @@ public class STRelateDescriptor extends AbstractScalarFunctionDynamicDescriptor 
         @Override
         @SuppressWarnings("unchecked")
         public void evaluate(IFrameTupleReference tuple, IPointable result) throws HyracksDataException {
+            resultStorage.reset();
             eval.evaluate(tuple, inputArg);
             byte[] bytes = inputArg.getByteArray();
             int offset = inputArg.getStartOffset();
@@ -108,8 +110,12 @@ public class STRelateDescriptor extends AbstractScalarFunctionDynamicDescriptor 
             int offset1 = inputArg1.getStartOffset();
             int len1 = inputArg1.getLength();
 
+            if (PointableHelper.checkAndSetMissingOrNull(result, inputArg, inputArg0, inputArg1)) {
+                return;
+            }
+
             if (bytes[offset] != ATypeTag.SERIALIZED_STRING_TYPE_TAG) {
-                throw new TypeMismatchException(sourceLoc, getIdentifier(), 0, bytes[offset],
+                throw new TypeMismatchException(sourceLoc, getIdentifier(), 2, bytes[offset],
                         ATypeTag.SERIALIZED_STRING_TYPE_TAG);
             }
             ATypeTag tag = EnumDeserializer.ATYPETAGDESERIALIZER.deserialize(bytes0[offset0]);
@@ -119,7 +125,7 @@ public class STRelateDescriptor extends AbstractScalarFunctionDynamicDescriptor 
             }
             tag = EnumDeserializer.ATYPETAGDESERIALIZER.deserialize(bytes1[offset1]);
             if (tag != ATypeTag.GEOMETRY) {
-                throw new TypeMismatchException(sourceLoc, getIdentifier(), 0, bytes1[offset1],
+                throw new TypeMismatchException(sourceLoc, getIdentifier(), 1, bytes1[offset1],
                         ATypeTag.SERIALIZED_GEOMETRY_TYPE_TAG);
             }
 

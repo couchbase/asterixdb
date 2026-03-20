@@ -30,6 +30,7 @@ import org.apache.asterix.om.types.ATypeTag;
 import org.apache.asterix.om.types.BuiltinType;
 import org.apache.asterix.om.types.EnumDeserializer;
 import org.apache.asterix.runtime.evaluators.base.AbstractScalarFunctionDynamicDescriptor;
+import org.apache.asterix.runtime.evaluators.functions.PointableHelper;
 import org.apache.asterix.runtime.exceptions.TypeMismatchException;
 import org.apache.hyracks.algebricks.runtime.base.IScalarEvaluator;
 import org.apache.hyracks.algebricks.runtime.base.IScalarEvaluatorFactory;
@@ -84,6 +85,10 @@ public abstract class AbstractSTDoubleGeometryDescriptor extends AbstractScalarF
             eval0.evaluate(tuple, argPtr0);
             eval1.evaluate(tuple, argPtr1);
 
+            if (PointableHelper.checkAndSetMissingOrNull(result, argPtr0, argPtr1)) {
+                return;
+            }
+
             try {
                 byte[] bytes0 = argPtr0.getByteArray();
                 int offset0 = argPtr0.getStartOffset();
@@ -99,7 +104,7 @@ public abstract class AbstractSTDoubleGeometryDescriptor extends AbstractScalarF
                 }
                 tag = EnumDeserializer.ATYPETAGDESERIALIZER.deserialize(bytes1[offset1]);
                 if (tag != ATypeTag.GEOMETRY) {
-                    throw new TypeMismatchException(sourceLoc, getIdentifier(), 0, bytes1[offset1],
+                    throw new TypeMismatchException(sourceLoc, getIdentifier(), 1, bytes1[offset1],
                             ATypeTag.SERIALIZED_GEOMETRY_TYPE_TAG);
                 }
 

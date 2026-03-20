@@ -1,0 +1,64 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+/* All single-argument geo functions with MISSING input — each must propagate MISSING.
+   is_missing() wraps the call so the boolean result appears in the record output. */
+{
+  "st_area":               is_missing(st_area(missing)),
+  "st_as_binary":          is_missing(st_as_binary(missing)),
+  "st_as_geojson":         is_missing(st_as_geojson(missing)),
+  "st_as_text":            is_missing(st_as_text(missing)),
+  "st_boundary":           is_missing(st_boundary(missing)),
+  "st_centroid":           is_missing(st_centroid(missing)),
+  "st_convex_hull":        is_missing(st_convex_hull(missing)),
+  "st_coord_dim":          is_missing(st_coord_dim(missing)),
+  "st_dimension":          is_missing(st_dimension(missing)),
+  "st_end_point":          is_missing(st_end_point(missing)),
+  "st_envelope":           is_missing(st_envelope(missing)),
+  "st_exterior_ring":      is_missing(st_exterior_ring(missing)),
+  "st_flip_coordinates":   is_missing(st_flip_coordinates(missing)),
+  "geometry_type":         is_missing(geometry_type(missing)),
+  "st_is_closed":          is_missing(st_is_closed(missing)),
+  "st_is_collection":      is_missing(st_is_collection(missing)),
+  "st_is_empty":           is_missing(st_is_empty(missing)),
+  "st_is_ring":            is_missing(st_is_ring(missing)),
+  "st_is_simple":          is_missing(st_is_simple(missing)),
+  "st_is_valid":           is_missing(st_is_valid(missing)),
+  "st_length":             is_missing(st_length(missing)),
+  "st_line_from_multipoint": is_missing(st_line_from_multipoint(missing)),
+  "st_m":                  is_missing(st_m(missing)),
+  "st_n_points":           is_missing(st_n_points(missing)),
+  "st_n_rings":            is_missing(st_n_rings(missing)),
+  "st_num_geometries":     is_missing(st_num_geometries(missing)),
+  "st_num_interior_rings": is_missing(st_num_interior_rings(missing)),
+  "st_reverse":            is_missing(st_reverse(missing)),
+  "st_srid":               is_missing(st_srid(missing)),
+  "st_start_point":        is_missing(st_start_point(missing)),
+  "st_x":                  is_missing(st_x(missing)),
+  "st_x_max":              is_missing(st_x_max(missing)),
+  "st_x_min":              is_missing(st_x_min(missing)),
+  "st_y":                  is_missing(st_y(missing)),
+  "st_y_max":              is_missing(st_y_max(missing)),
+  "st_y_min":              is_missing(st_y_min(missing)),
+  "st_z":                  is_missing(st_z(missing)),
+  "st_z_max":              is_missing(st_z_max(missing)),
+  "st_z_min":              is_missing(st_z_min(missing)),
+  "st_geom_from_text":     is_missing(st_geom_from_text(missing)),
+  "st_geom_from_wkb":      is_missing(st_geom_from_wkb(missing)),
+  "st_polygonize":         is_missing(st_polygonize(missing))
+};

@@ -1,0 +1,58 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+/* Two-argument and geometry-N functions with MISSING in each argument position.
+   Suffix _0 = MISSING in arg0, _1 = MISSING in arg1. All must propagate MISSING. */
+{
+  /* AbstractSTDoubleGeometryDescriptor subclasses */
+  "st_contains_0":         is_missing(st_contains(missing, st_geom_from_text("POINT(0 0)"))),
+  "st_contains_1":         is_missing(st_contains(st_geom_from_text("POINT(0 0)"), missing)),
+  "st_crosses_0":          is_missing(st_crosses(missing, st_geom_from_text("LINESTRING(0 0, 1 1)"))),
+  "st_crosses_1":          is_missing(st_crosses(st_geom_from_text("LINESTRING(0 0, 1 1)"), missing)),
+  "st_difference_0":       is_missing(st_difference(missing, st_geom_from_text("POINT(0 0)"))),
+  "st_difference_1":       is_missing(st_difference(st_geom_from_text("POINT(0 0)"), missing)),
+  "st_disjoint_0":         is_missing(st_disjoint(missing, st_geom_from_text("POINT(0 0)"))),
+  "st_disjoint_1":         is_missing(st_disjoint(st_geom_from_text("POINT(0 0)"), missing)),
+  "st_distance_0":         is_missing(st_distance(missing, st_geom_from_text("POINT(0 0)"))),
+  "st_distance_1":         is_missing(st_distance(st_geom_from_text("POINT(0 0)"), missing)),
+  "st_distance_sphere_0":  is_missing(st_distance_sphere(missing, st_geom_from_text("POINT(0 0)"))),
+  "st_distance_sphere_1":  is_missing(st_distance_sphere(st_geom_from_text("POINT(0 0)"), missing)),
+  "st_equals_0":           is_missing(st_equals(missing, st_geom_from_text("POINT(0 0)"))),
+  "st_equals_1":           is_missing(st_equals(st_geom_from_text("POINT(0 0)"), missing)),
+  "st_intersection_0":     is_missing(st_intersection(missing, st_geom_from_text("POINT(0 0)"))),
+  "st_intersection_1":     is_missing(st_intersection(st_geom_from_text("POINT(0 0)"), missing)),
+  "st_intersects_0":       is_missing(st_intersects(missing, st_geom_from_text("POINT(0 0)"))),
+  "st_intersects_1":       is_missing(st_intersects(st_geom_from_text("POINT(0 0)"), missing)),
+  "st_overlaps_0":         is_missing(st_overlaps(missing, st_geom_from_text("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"))),
+  "st_overlaps_1":         is_missing(st_overlaps(st_geom_from_text("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"), missing)),
+  "st_sym_difference_0":   is_missing(st_sym_difference(missing, st_geom_from_text("POINT(0 0)"))),
+  "st_sym_difference_1":   is_missing(st_sym_difference(st_geom_from_text("POINT(0 0)"), missing)),
+  "st_touches_0":          is_missing(st_touches(missing, st_geom_from_text("POINT(0 0)"))),
+  "st_touches_1":          is_missing(st_touches(st_geom_from_text("POINT(0 0)"), missing)),
+  "st_union_0":            is_missing(st_union(missing, st_geom_from_text("POINT(0 0)"))),
+  "st_union_1":            is_missing(st_union(st_geom_from_text("POINT(0 0)"), missing)),
+  "st_within_0":           is_missing(st_within(missing, st_geom_from_text("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"))),
+  "st_within_1":           is_missing(st_within(st_geom_from_text("POINT(0 0)"), missing)),
+  /* AbstractSTGeometryNDescriptor subclasses (geom, int64) */
+  "st_geometry_n_0":       is_missing(st_geometry_n(missing, 1)),
+  "st_geometry_n_1":       is_missing(st_geometry_n(st_geom_from_text("GEOMETRYCOLLECTION(POINT(0 0), LINESTRING(0 0, 1 1))"), missing)),
+  "st_point_n_0":          is_missing(st_point_n(missing, 1)),
+  "st_point_n_1":          is_missing(st_point_n(st_geom_from_text("LINESTRING(0 0, 1 1)"), missing)),
+  "st_interior_ring_n_0":  is_missing(st_interior_ring_n(missing, 1)),
+  "st_interior_ring_n_1":  is_missing(st_interior_ring_n(st_geom_from_text("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"), missing))
+};
