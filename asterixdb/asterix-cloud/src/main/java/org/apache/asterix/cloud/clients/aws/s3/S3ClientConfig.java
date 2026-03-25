@@ -23,7 +23,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 
-import org.apache.asterix.common.config.CloudProperties;
+import org.apache.asterix.common.config.ICloudProperties;
 import org.apache.asterix.external.util.aws.AwsConstants;
 
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
@@ -88,7 +88,7 @@ public final class S3ClientConfig {
         this.roundRobinDnsResolver = roundRobinDnsResolver;
     }
 
-    public static S3ClientConfig of(CloudProperties cloudProperties) {
+    public static S3ClientConfig of(ICloudProperties cloudProperties) {
         return new S3ClientConfig(cloudProperties.getStorageRegion(), cloudProperties.getStorageEndpoint(),
                 cloudProperties.getStoragePrefix(), cloudProperties.isStorageAnonymousAuth(),
                 cloudProperties.getStorageCertificates(), cloudProperties.getProfilerLogInterval(),

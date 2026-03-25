@@ -42,7 +42,7 @@ import org.apache.hyracks.api.config.IOptionType;
 import org.apache.hyracks.api.config.Section;
 import org.apache.hyracks.util.StorageUtil;
 
-public class CloudProperties extends AbstractProperties {
+public class CloudProperties extends AbstractProperties implements ICloudProperties {
 
     public static final int MAX_HTTP_CONNECTIONS = 1000;
     public static final int MAX_PENDING_HTTP_CONNECTIONS = 10000;
