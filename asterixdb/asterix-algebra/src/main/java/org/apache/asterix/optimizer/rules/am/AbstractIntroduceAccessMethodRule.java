@@ -30,6 +30,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.asterix.common.annotations.AbstractExpressionAnnotationWithIndexNames;
+import org.apache.asterix.common.annotations.SkipSecondaryIndexSearchExpressionAnnotation;
 import org.apache.asterix.common.config.DatasetConfig;
 import org.apache.asterix.common.config.DatasetConfig.DatasetType;
 import org.apache.asterix.common.config.DatasetConfig.IndexType;
@@ -740,12 +741,8 @@ public abstract class AbstractIntroduceAccessMethodRule implements IAlgebraicRew
                 found = false;
                 break;
             }
-            if (!found) {
-                break;
-            }
-            boolean matchFound = analyzeSelectOrJoinOpConditionAndUpdateAnalyzedAM(argFuncExpr, assignsAndUnnests,
+            found = analyzeSelectOrJoinOpConditionAndUpdateAnalyzedAM(argFuncExpr, assignsAndUnnests,
                     disjuncAnalyzedAMs, context, typeEnvironment);
-            found = found && matchFound;
             if (!found) {
                 break;
             }
@@ -761,6 +758,50 @@ public abstract class AbstractIntroduceAccessMethodRule implements IAlgebraicRew
 
             for (IOptimizableFuncExpr optFuncExpr : disjuncAnalysisCtx.getMatchedFuncExprs()) {
                 analysisCtx.addMatchedFuncExpr(optFuncExpr);
+            }
+
+            /*
+            *  If any predicate within a disjunction is marked with skip-index,
+            *  propagate the annotation to all predicates in the disjunction.
+            *  var /skip-index/ = 0 or var = 1 should entirely skip index search for var = 0 and var = 1
+            * */
+
+            boolean skipAnyIndex = false;
+            Collection<String> indexNames = new ArrayList<>();
+            for (Mutable<ILogicalExpression> arg : funcExpr.getArguments()) {
+                AbstractFunctionCallExpression argExpr = (AbstractFunctionCallExpression) arg.get();
+                SkipSecondaryIndexSearchExpressionAnnotation anno =
+                        argExpr.getAnnotation(SkipSecondaryIndexSearchExpressionAnnotation.class);
+                if (anno == SkipSecondaryIndexSearchExpressionAnnotation.INSTANCE_ANY_INDEX) {
+                    skipAnyIndex = true;
+                    break;
+                } else if (anno != null) {
+                    indexNames.addAll(anno.getIndexNames());
+                }
+            }
+
+            if (skipAnyIndex) {
+                funcExpr.getArguments().forEach(arg -> {
+                    AbstractFunctionCallExpression argExpr = (AbstractFunctionCallExpression) arg.get();
+                    SkipSecondaryIndexSearchExpressionAnnotation anno =
+                            argExpr.getAnnotation(SkipSecondaryIndexSearchExpressionAnnotation.class);
+                    if (anno != SkipSecondaryIndexSearchExpressionAnnotation.INSTANCE_ANY_INDEX) {
+                        argExpr.removeAnnotation(SkipSecondaryIndexSearchExpressionAnnotation.class);
+                        argExpr.putAnnotation(SkipSecondaryIndexSearchExpressionAnnotation.INSTANCE_ANY_INDEX);
+                    }
+                });
+            } else if (!indexNames.isEmpty()) {
+                SkipSecondaryIndexSearchExpressionAnnotation annotation =
+                        SkipSecondaryIndexSearchExpressionAnnotation.newInstance(indexNames);
+                funcExpr.getArguments().forEach(arg -> {
+                    AbstractFunctionCallExpression argExpr = (AbstractFunctionCallExpression) arg.get();
+                    SkipSecondaryIndexSearchExpressionAnnotation argExprAnnotation =
+                            argExpr.getAnnotation(SkipSecondaryIndexSearchExpressionAnnotation.class);
+                    if (argExprAnnotation != null) {
+                        argExpr.removeAnnotation(SkipSecondaryIndexSearchExpressionAnnotation.class);
+                    }
+                    argExpr.putAnnotation(annotation);
+                });
             }
         }
         return found;
