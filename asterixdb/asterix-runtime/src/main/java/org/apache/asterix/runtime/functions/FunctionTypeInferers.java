@@ -21,6 +21,7 @@ package org.apache.asterix.runtime.functions;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.asterix.common.config.CompilerProperties;
 import org.apache.asterix.common.exceptions.CompilationException;
@@ -53,7 +54,6 @@ import org.apache.hyracks.algebricks.core.algebra.expressions.IVariableTypeEnvir
 import org.apache.hyracks.algebricks.core.algebra.expressions.VariableReferenceExpression;
 import org.apache.hyracks.algebricks.core.algebra.functions.AlgebricksBuiltinFunctions;
 import org.apache.hyracks.algebricks.core.algebra.metadata.IMetadataProvider;
-import org.apache.hyracks.algebricks.core.config.AlgebricksConfig;
 
 /**
  * Implementations of {@link IFunctionTypeInferer} for built-in functions
@@ -123,12 +123,6 @@ public final class FunctionTypeInferers {
         }
     };
 
-    public static final IFunctionTypeInferer SET_OR_TYPES = (expr, fd, context, compilerProps, metadataProvider) -> {
-        AbstractFunctionCallExpression fce = (AbstractFunctionCallExpression) expr;
-        IAType elementType = (IAType) context.getType(fce.getArguments().get(1).getValue());
-        fd.setImmutableStates(TypeComputeUtils.getActualType(elementType));
-    };
-
     public static final IFunctionTypeInferer MEDIAN_MEMORY = (expr, fd, context, compilerProps, metadataProvider) -> fd
             .setImmutableStates(compilerProps.getSortMemoryFrames());
 
@@ -146,25 +140,28 @@ public final class FunctionTypeInferers {
         @Override
         public void infer(ILogicalExpression expr, IFunctionDescriptor fd, IVariableTypeEnvironment context,
                 CompilerProperties compilerProps, IMetadataProvider<?, ?> mp) throws AlgebricksException {
-            Object hashBasedOption = mp.getConfig().get(AlgebricksConfig.HASH_BASED_OR_OPTION);
-            boolean hashBasedOrEnabled = AlgebricksConfig.HASH_BASED_OR_OPTION_DEFAULT;
-            if (hashBasedOption != null) {
-                hashBasedOrEnabled = Boolean.parseBoolean(String.valueOf(hashBasedOption));
+            int hashBasedThreshold;
+            Map<String, Object> config = mp.getConfig();
+            if (config.containsKey(CompilerProperties.COMPILER_DISJUNCTION_HASH_THRESHOLD)) {
+                Object hashBasedOptionFromQuery = config.get(CompilerProperties.COMPILER_DISJUNCTION_HASH_THRESHOLD);
+                hashBasedThreshold =
+                        (hashBasedOptionFromQuery != null) ? Integer.parseInt(String.valueOf(hashBasedOptionFromQuery))
+                                : compilerProps.getHashBasedORThreshold();
+            } else {
+                hashBasedThreshold = compilerProps.getHashBasedORThreshold();
             }
-            if (!hashBasedOrEnabled) {
-                return;
-            }
+
             AbstractFunctionCallExpression fce = (AbstractFunctionCallExpression) expr;
-            IAType elementType = useHashBased(fce);
+            IAType elementType = useHashBased(fce, hashBasedThreshold);
             if (elementType != null) {
                 fd.setImmutableStates((Object[]) new IAType[] { elementType });
             }
         }
     };
 
-    private static IAType useHashBased(AbstractFunctionCallExpression funcExpr) {
+    private static IAType useHashBased(AbstractFunctionCallExpression funcExpr, int hashBasedThreshold) {
         List<Mutable<ILogicalExpression>> orArgs = funcExpr.getArguments();
-        if (orArgs.size() < 2) {
+        if (hashBasedThreshold < 0 || orArgs.size() < 2 || orArgs.size() < hashBasedThreshold) {
             return null;
         }
         LogicalVariable commonVar = null;

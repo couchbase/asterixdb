@@ -167,7 +167,11 @@ public class CompilerProperties extends AbstractProperties {
         COMPILER_REWRITE_DISJUNCTION(
                 BOOLEAN,
                 AlgebricksConfig.REWRITE_DISJUNCTION_DEFAULT,
-                "Set the mode for rewriting disjunctions to joins in query plans");
+                "Set the mode for rewriting disjunctions to joins in query plans"),
+        COMPILER_DISJUNCTION_HASH_THRESHOLD(
+                getRangedIntegerType(-1, Integer.MAX_VALUE),
+                AlgebricksConfig.HASH_BASED_OR_THRESHOLD_DEFAULT,
+                "The max number of disjunctions after which a hash-based approach is used for evaluating OR operation");
 
         private final IOptionType type;
         private final Object defaultValue;
@@ -222,7 +226,10 @@ public class CompilerProperties extends AbstractProperties {
     public static final String COMPILER_SORT_SAMPLES_KEY = Option.COMPILER_SORT_SAMPLES.ini();
 
     public static final String COMPILER_INDEXONLY_KEY = Option.COMPILER_INDEXONLY.ini();
+
     public static final String COMPILER_REWRITE_DISJUNCTION_KEY = Option.COMPILER_REWRITE_DISJUNCTION.ini();
+
+    public static final String COMPILER_DISJUNCTION_HASH_THRESHOLD = Option.COMPILER_DISJUNCTION_HASH_THRESHOLD.ini();
 
     public static final String COMPILER_INTERNAL_SANITYCHECK_KEY = Option.COMPILER_INTERNAL_SANITYCHECK.ini();
 
@@ -326,6 +333,10 @@ public class CompilerProperties extends AbstractProperties {
 
     public boolean rewriteDisjunctionToJoin() {
         return accessor.getBoolean(Option.COMPILER_REWRITE_DISJUNCTION);
+    }
+
+    public int getHashBasedORThreshold() {
+        return accessor.getInt(Option.COMPILER_DISJUNCTION_HASH_THRESHOLD);
     }
 
     public boolean isSanityCheck() {

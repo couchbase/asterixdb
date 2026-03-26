@@ -469,7 +469,6 @@ public final class RuleCollections {
         prepareForJobGenRewrites.add(new EnsureColumnarSupportedTypesRule());
         // EmbedProjectRule should run last. The assumption is that this rules set will run once
         prepareForJobGenRewrites.add(new EmbedProjectRule());
-        //prepareForJobGenRewrites.add(new HashBasedOrRule());
         return prepareForJobGenRewrites;
     }
 }
