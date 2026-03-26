@@ -6439,6 +6439,11 @@
       </compilation-unit>
     </test-case>
     <test-case FilePath="index-selection">
+      <compilation-unit name="btree-index-array-range">
+        <output-dir compare="Text">btree-index-array-range</output-dir>
+      </compilation-unit>
+    </test-case>
+    <test-case FilePath="index-selection">
       <compilation-unit name="btree-index-range-02">
         <output-dir compare="Text">btree-index-range-02</output-dir>
       </compilation-unit>

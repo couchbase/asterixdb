@@ -748,16 +748,19 @@ public abstract class AbstractIntroduceAccessMethodRule implements IAlgebraicRew
             }
         }
 
-        AccessMethodAnalysisContext disjuncAnalysisCtx = disjuncAnalyzedAMs.get(BTreeAccessMethod.INSTANCE);
-        if (found && disjuncAnalysisCtx != null) {
-            AccessMethodAnalysisContext analysisCtx = analyzedAMs.get(BTreeAccessMethod.INSTANCE);
-            if (analysisCtx == null) {
-                analysisCtx = new AccessMethodAnalysisContext();
-                analyzedAMs.put(BTreeAccessMethod.INSTANCE, analysisCtx);
-            }
-
-            for (IOptimizableFuncExpr optFuncExpr : disjuncAnalysisCtx.getMatchedFuncExprs()) {
-                analysisCtx.addMatchedFuncExpr(optFuncExpr);
+        if (found) {
+            for (IAccessMethod accessMethod : getAccessMethods().get(AlgebricksBuiltinFunctions.EQ)) {
+                AccessMethodAnalysisContext disjuncAnalysisCtx = disjuncAnalyzedAMs.get(accessMethod);
+                if (disjuncAnalysisCtx != null) {
+                    AccessMethodAnalysisContext analysisCtx = analyzedAMs.get(accessMethod);
+                    if (analysisCtx == null) {
+                        analysisCtx = new AccessMethodAnalysisContext();
+                        analyzedAMs.put(accessMethod, analysisCtx);
+                    }
+                    for (IOptimizableFuncExpr optFuncExpr : disjuncAnalysisCtx.getMatchedFuncExprs()) {
+                        analysisCtx.addMatchedFuncExpr(optFuncExpr);
+                    }
+                }
             }
 
             /*
