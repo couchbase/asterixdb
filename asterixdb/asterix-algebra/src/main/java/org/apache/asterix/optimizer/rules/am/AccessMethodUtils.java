@@ -2127,25 +2127,25 @@ public class AccessMethodUtils {
             if (argFuncIdent.equals(funcIdents.get(i).first)) {
                 functionFound = true;
                 requireVerificationAfterSIdxSearch = funcIdents.get(i).second;
-                break;
+                return new Pair<>(functionFound, requireVerificationAfterSIdxSearch);
             }
         }
 
         // If function-call itself is not an index-based access method, we check its arguments.
-        if (!functionFound) {
-            for (Mutable<ILogicalExpression> arg : funcExpr.getArguments()) {
-                ILogicalExpression argExpr = arg.getValue();
-                if (argExpr.getExpressionTag() != LogicalExpressionTag.FUNCTION_CALL) {
-                    continue;
-                }
-                AbstractFunctionCallExpression argFuncExpr = (AbstractFunctionCallExpression) argExpr;
-                FunctionIdentifier argExprFuncIdent = argFuncExpr.getFunctionIdentifier();
-                for (int i = 0; i < funcIdents.size(); i++) {
-                    if (argExprFuncIdent.equals(funcIdents.get(i).first)) {
-                        functionFound = true;
-                        requireVerificationAfterSIdxSearch = funcIdents.get(i).second;
-                        break;
-                    }
+
+        for (Mutable<ILogicalExpression> arg : funcExpr.getArguments()) {
+            ILogicalExpression argExpr = arg.getValue();
+            if (argExpr.getExpressionTag() != LogicalExpressionTag.FUNCTION_CALL) {
+                continue;
+            }
+            AbstractFunctionCallExpression argFuncExpr = (AbstractFunctionCallExpression) argExpr;
+            for (int i = 0; i < funcIdents.size(); i++) {
+                Pair<Boolean, Boolean> pair =
+                        canFunctionGenerateFalsePositiveResultsUsingIndex(argFuncExpr, funcIdents);
+                if (pair.first) {
+                    functionFound = true;
+                    requireVerificationAfterSIdxSearch = pair.second;
+                    return new Pair<>(functionFound, requireVerificationAfterSIdxSearch);
                 }
             }
         }
