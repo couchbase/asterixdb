@@ -22,17 +22,22 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.security.KeyStore;
 import java.security.SecureRandom;
+import java.util.Optional;
 
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
+import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509ExtendedTrustManager;
 
+import org.apache.hyracks.api.network.ICertificateRevocationChecker;
 import org.apache.hyracks.api.network.INetworkSecurityConfig;
 import org.apache.hyracks.api.network.INetworkSecurityManager;
 import org.apache.hyracks.api.network.ISocketChannelFactory;
 import org.apache.hyracks.ipc.sockets.PlainSocketChannelFactory;
 import org.apache.hyracks.ipc.sockets.SslSocketChannelFactory;
+import org.apache.hyracks.util.annotations.AiProvenance;
 
 public class NetworkSecurityManager implements INetworkSecurityManager {
 
@@ -104,8 +109,19 @@ public class NetworkSecurityManager implements INetworkSecurityManager {
                 trustStore = loadKeyStoreFromFile(password, config.getTrustStoreFile());
             }
             trustManagerFactory.init(trustStore);
+            final TrustManager[] trustManagers = trustManagerFactory.getTrustManagers();
+            @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.GENERATED)
+            final Optional<ICertificateRevocationChecker> revocationChecker = config.getCertificateRevocationChecker();
+            if (revocationChecker.isPresent()) {
+                for (int i = 0; i < trustManagers.length; i++) {
+                    if (trustManagers[i] instanceof X509ExtendedTrustManager) {
+                        trustManagers[i] = new RevocationCheckingTrustManager(
+                                (X509ExtendedTrustManager) trustManagers[i], revocationChecker.get());
+                    }
+                }
+            }
             SSLContext ctx = SSLContext.getInstance(TLS_VERSION);
-            ctx.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), new SecureRandom());
+            ctx.init(keyManagerFactory.getKeyManagers(), trustManagers, new SecureRandom());
             return ctx;
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to create SSLEngine", ex);

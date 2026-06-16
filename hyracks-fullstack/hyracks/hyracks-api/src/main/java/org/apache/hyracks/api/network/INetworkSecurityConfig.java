@@ -24,6 +24,8 @@ import java.net.InetAddress;
 import java.security.KeyStore;
 import java.util.Optional;
 
+import org.apache.hyracks.util.annotations.AiProvenance;
+
 import io.netty.handler.ssl.ClientAuth;
 
 public interface INetworkSecurityConfig extends Serializable {
@@ -109,4 +111,15 @@ public interface INetworkSecurityConfig extends Serializable {
      * @return the optional bind address
      */
     Optional<InetAddress> getRMIBindAddress();
+
+    /**
+     * An optional hook to check peer certificates for revocation during the TLS handshake (after PKIX validation).
+     * When present, it is applied to both inbound and outbound node-to-node connections.
+     *
+     * @return the revocation checker, or {@link Optional#empty()} to disable revocation checking
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.GENERATED)
+    default Optional<ICertificateRevocationChecker> getCertificateRevocationChecker() {
+        return Optional.empty();
+    }
 }
