@@ -87,7 +87,7 @@
     <hyracks.version>0.3.8.3-SNAPSHOT</hyracks.version>
     <hadoop.version>3.4.2</hadoop.version>
     <jacoco.version>0.7.6.201602180812</jacoco.version>
-    <log4j.version>2.25.4</log4j.version>
+    <log4j.version>2.25.5</log4j.version>
     <awsjavasdk.version>2.29.27</awsjavasdk.version>
     <parquet.version>1.17.0</parquet.version> <!-- NOTICE: please update transitives from parquet below on any change -->
     <hadoop-awsjavasdk.version>1.12.797</hadoop-awsjavasdk.version>
@@ -1222,7 +1222,7 @@
       <dependency>
         <groupId>org.apache.commons</groupId>
         <artifactId>commons-compress</artifactId>
-        <version>1.27.1</version>
+        <version>1.28.0</version>
       </dependency>
       <dependency>
         <groupId>commons-logging</groupId>
@@ -1232,7 +1232,7 @@
       <dependency>
         <groupId>commons-logging</groupId>
         <artifactId>commons-logging</artifactId>
-        <version>1.3.6</version>
+        <version>1.4.0</version>
       </dependency>
       <dependency>
         <groupId>org.apache.hyracks</groupId>
@@ -1472,7 +1472,7 @@
       <dependency>
         <groupId>commons-codec</groupId>
         <artifactId>commons-codec</artifactId>
-        <version>1.17.1</version>
+        <version>1.22.0</version>
       </dependency>
       <dependency>
         <groupId>it.unimi.dsi</groupId>
@@ -1681,7 +1681,7 @@
       <dependency>
         <groupId>org.apache.commons</groupId>
         <artifactId>commons-csv</artifactId>
-        <version>1.12.0</version>
+        <version>1.14.1</version>
       </dependency>
       <dependency>
         <groupId>org.testcontainers</groupId>
