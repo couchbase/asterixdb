@@ -89,7 +89,7 @@
     <jacoco.version>0.7.6.201602180812</jacoco.version>
     <log4j.version>2.25.5</log4j.version>
     <awsjavasdk.version>2.29.27</awsjavasdk.version>
-    <parquet.version>1.17.0</parquet.version> <!-- NOTICE: please update transitives from parquet below on any change -->
+    <parquet.version>1.17.1</parquet.version> <!-- NOTICE: please update transitives from parquet below on any change -->
     <hadoop-awsjavasdk.version>1.12.797</hadoop-awsjavasdk.version>
 
     <azureblobjavasdk.version>12.31.1</azureblobjavasdk.version>
@@ -1745,23 +1745,24 @@
         <artifactId>parquet-jackson</artifactId>
         <version>${parquet.version}</version>
       </dependency>
-      <!-- BEGIN: transitive from parquet, please validate with any update of ${parquet.version} -->
+      <!-- @pinned-with: ${parquet.version} -->
       <dependency>
         <groupId>io.airlift</groupId>
         <artifactId>aircompressor</artifactId>
         <version>2.0.3</version>
       </dependency>
+      <!-- @pinned-with: ${parquet.version} -->
       <dependency>
         <groupId>com.github.luben</groupId>
         <artifactId>zstd-jni</artifactId>
         <version>1.5.7-7</version>
       </dependency>
+      <!-- @pinned-with: ${parquet.version} -->
       <dependency>
         <groupId>commons-pool</groupId>
         <artifactId>commons-pool</artifactId>
         <version>1.6</version>
       </dependency>
-      <!-- END: transitive from parquet, please validate with any update of ${parquet.version} -->
       <dependency>
         <groupId>org.kitesdk</groupId>
         <artifactId>kite-data-core</artifactId>
