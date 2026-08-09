@@ -125,7 +125,8 @@ public interface IRequestTracker extends IJobLifecycleListener {
     Optional<IClientRequest> getAsyncOrDeferredRequest(String requestId);
 
     /**
-     * Notifies this tracker that the result of job {@code jobId} has been consumed.
+     * Notifies this tracker that the result of job {@code jobId} has been consumed. The request stops
+     * being tracked once none of its jobs has a result left to fetch.
      *
      * @param jobId the job id whose result has been consumed
      * @param requestId the request id associated with the job

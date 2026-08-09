@@ -416,13 +416,16 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
         final ResultMetadata outMetadata = requestParameters.getOutMetadata();
         final Map<String, IAObject> stmtParams = requestParameters.getStatementParameters();
         warningCollector.setMaxWarnings(sessionConfig.getMaxWarnings());
-        boolean hasResultSet = false;
         Exception exception = null;
         // the client's statements are numbered from 1; the request's own dataverse declaration is not one
         int statementPosition = 0;
         final boolean multiStatementRequest = isMultiStatementRequest();
         try {
             for (Statement stmt : statements) {
+                // each statement decides for itself whether it can be canceled
+                if (!clientRequest.markUncancellable()) {
+                    throw new RuntimeDataException(ErrorCode.REQUEST_CANCELLED, reqId);
+                }
                 if (sessionConfig.is(SessionConfig.FORMAT_HTML)) {
                     sessionOutput.out().println(ApiServlet.HTML_STATEMENT_SEPARATOR);
                 }
@@ -652,7 +655,6 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
                     throw e;
                 }
                 endStatement(statementInfo, statsBeforeStatement, stats, null);
-                hasResultSet |= metadataProvider.getResultSetId() != null;
                 if (shouldInvalidateQueryPlanCache(stmt)) {
                     queryPlanCache.clear();
                 }
@@ -663,22 +665,19 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
             exception = ex;
             throw ex;
         } finally {
-            // async queries are completed after their job completes
+            // async queries are completed after their jobs complete
             if (ResultDelivery.ASYNC != resultDelivery) {
-                // this assumes 1-1 mapping between a request and a statement, needs to be adapted for multi-statement
                 appCtx.getRequestTracker().complete(reqId);
                 if (trackInAsyncDeferredRequests) {
-                    completeDeferred((ClientRequest) clientRequest, hasResultSet, exception);
+                    completeDeferred((ClientRequest) clientRequest, exception);
                 }
             } else {
                 if (statements.isEmpty()) {
                     appCtx.getRequestTracker().complete(reqId);
                 }
-                if (trackInAsyncDeferredRequests) {
-                    JobId jobId = ((ClientRequest) clientRequest).getJobId();
-                    if (jobId == null) {
-                        appCtx.getRequestTracker().removeAsyncOrDeferredRequest(clientRequest.getId());
-                    }
+                // no job was created, so no sweep will come to stop tracking it
+                if (trackInAsyncDeferredRequests && ((ClientRequest) clientRequest).getJobIds().isEmpty()) {
+                    appCtx.getRequestTracker().removeAsyncOrDeferredRequest(clientRequest.getId());
                 }
             }
             Thread.currentThread().setName(threadName);
@@ -760,22 +759,17 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
         // no statement-level validation in AsterixDB
     }
 
-    private void completeDeferred(ClientRequest clientRequest, boolean hasResultSet, Exception exception) {
+    private void completeDeferred(ClientRequest clientRequest, Exception exception) {
         try {
-            JobId jobId = clientRequest.getJobId();
-            if (jobId == null) {
-                // jobId = null either means:
-                // 1. compile error, compile-only, ... resulting in no job created whether query, DML or DDL
-                // 2. statement currently not setting jobId in the client request, e.g. DDLs
-                // for 2. it needs to be handled so that the job record is removed also if not producing a result
-                appCtx.getRequestTracker().removeAsyncOrDeferredRequest(clientRequest.getId());
-            } else if (!hasResultSet) {
-                // don't sweep ones that completed successfully and produced a result
-                // sweeps statements not producing a result, e.g. DMLs without a return clause
-                // sweeps statements that threw an exception whether query, DML or DDL
-                ClusterControllerService ccSvs =
-                        (ClusterControllerService) appCtx.getServiceContext().getControllerService();
+            // sweep the jobs whose results the client cannot fetch, leaving the rest alone
+            ClusterControllerService ccSvs =
+                    (ClusterControllerService) appCtx.getServiceContext().getControllerService();
+            for (JobId jobId : clientRequest.getJobsWithoutPendingResults()) {
                 ccSvs.getResultDirectoryService().removeIfDone(jobId);
+            }
+            if (!clientRequest.hasPendingResults()) {
+                // nothing left to fetch, so no sweep will come to remove the request
+                appCtx.getRequestTracker().removeAsyncOrDeferredRequest(clientRequest.getId());
             }
         } catch (Throwable th) {
             if (exception != null) {
@@ -4919,13 +4913,16 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
     private static JobId runTrackJob(IHyracksClientConnection hcc, JobSpecification jobSpec, EnumSet<JobFlag> jobFlags,
             String reqId, String clientCtxId, ClientRequest clientRequest, JobKind jobKind) throws Exception {
         // Guard before submitting the job: if the request was cancelled and removed from the tracker,
-        // clientRequest will be null here; treat that as a cancellation rather than NPE on setJobId.
+        // clientRequest will be null here; treat that as a cancellation rather than NPE on addJob.
         ensureNotCancelled(clientRequest, reqId);
         jobSpec.setRequestId(reqId);
         jobSpec.setProperty(JOB_KIND, jobKind);
         JobId jobId = JobUtils.runJobIfActive(hcc, jobSpec, jobFlags, false);
         LOGGER.info("Created job {} for uuid:{}, clientContextID:{}", jobId, reqId, clientCtxId);
-        clientRequest.setJobId(jobId);
+        if (!clientRequest.addJob(jobId)) {
+            hcc.cancelJob(jobId);
+            throw new RuntimeDataException(ErrorCode.REQUEST_CANCELLED, reqId);
+        }
         return jobId;
     }
 
@@ -6183,6 +6180,10 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
                         responsePrinter.addResultPrinter(
                                 new ResultHandlePrinter(sessionOutput, new ResultHandle(id, resultSetId, null)));
                     }
+                    if (resultSetId != null) {
+                        // fetchable by the client now, so not to be swept
+                        clientRequest.markResultPending(id);
+                    }
                     responsePrinter.printResults();
                     if (outMetadata != null) {
                         ResultSetInfo resultSetInfo =
@@ -6219,7 +6220,7 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
             stats.setJobProfile(resultMetadata.getJobProfile());
             apiFramework.generateOptimizedLogicalPlanWithProfile(resultMetadata.getJobProfile());
         }
-        clientRequest.setPlan(apiFramework.getExecutionPlans().getOptimizedLogicalPlan());
+        clientRequest.setPlan(jobId, apiFramework.getExecutionPlans().getOptimizedLogicalPlan());
         stats.updateTotalWarningsCount(resultMetadata.getTotalWarningsCount());
         WarningUtil.mergeWarnings(resultMetadata.getWarnings(), warningCollector);
     }

@@ -217,7 +217,7 @@ public class QueryStatusApiServlet extends AbstractQueryApiServlet {
             if (clientRequestOpt.isPresent()) {
                 ClientRequest clientRequest = (ClientRequest) clientRequestOpt.get();
                 requestTimeMillis = clientRequest.getRequestTimeMillis();
-                compileTimeNanos = clientRequest.getCompileTimeNanos();
+                compileTimeNanos = clientRequest.getCompileTimeNanos(jobId);
                 elapsedTimeMillis = clientRequest.getElapsedTimeMillis();
             }
             printMetricsWithoutMetadata(printer, request, status, requestTimeMillis, compileTimeNanos,

@@ -80,7 +80,7 @@ public class QueryCancellationServletTest {
         RequestParameters requestParameters = new RequestParameters(requestReference, "select 1", null, null, null,
                 null, null, "1", null, null, null, true);
         ClientRequest request = new ClientRequest(requestParameters);
-        request.setJobId(new JobId(1));
+        request.addJob(new JobId(1));
         request.markCancellable();
         tracker.track(request);
         // Tests the case that query is in the map.
@@ -97,7 +97,7 @@ public class QueryCancellationServletTest {
         requestParameters = new RequestParameters(requestReference2, "select 1", null, null, null, null, null, "2",
                 null, null, null, true);
         ClientRequest request2 = new ClientRequest(requestParameters);
-        request2.setJobId(new JobId(2));
+        request2.addJob(new JobId(2));
         request2.markCancellable();
         tracker.track(request2);
         Mockito.doThrow(new Exception()).when(mockHcc).cancelJob(any());

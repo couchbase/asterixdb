@@ -216,7 +216,8 @@ public class AbstractQueryApiServlet extends AbstractServlet {
         }
         Optional<IClientRequest> clientRequest =
                 ((ICcApplicationContext) appCtx).getRequestTracker().getAsyncOrDeferredRequest(requestId);
-        if (clientRequest.isEmpty() || ((ClientRequest) clientRequest.get()).getJobId() == null) {
+        // any job of the request authorises its own handle; a request with several statements has one per statement
+        if (clientRequest.isEmpty() || !((ClientRequest) clientRequest.get()).hasJob(jobId)) {
             response.setStatus(HttpResponseStatus.NOT_FOUND);
             return false;
         }

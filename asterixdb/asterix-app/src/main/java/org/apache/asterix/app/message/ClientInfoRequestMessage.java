@@ -56,7 +56,7 @@ public class ClientInfoRequestMessage implements ICcAddressedMessage {
         CCMessageBroker messageBroker = (CCMessageBroker) appCtx.getServiceContext().getMessageBroker();
         Optional<IClientRequest> clientRequestOpt = appCtx.getRequestTracker().getAsyncOrDeferredRequest(requestId);
         ClientInfoResponseMessage response;
-        if (clientRequestOpt.isEmpty() || !jobId.equals(((ClientRequest) clientRequestOpt.get()).getJobId())) {
+        if (clientRequestOpt.isEmpty() || !((ClientRequest) clientRequestOpt.get()).hasJob(jobId)) {
             response = new ClientInfoResponseMessage(ncReqId, false);
         } else {
             if (metricsRequired) {
@@ -65,8 +65,8 @@ public class ClientInfoRequestMessage implements ICcAddressedMessage {
                 JobRun run = ccs.getJobManager().get(jobId);
                 ClientRequest clientRequest = (ClientRequest) clientRequestOpt.get();
                 response = new ClientInfoResponseMessage(ncReqId, true, clientRequest.getRequestTimeMillis(),
-                        clientRequest.getCompileTimeNanos(), clientRequest.getElapsedTimeMillis(), run.getCreateTime(),
-                        run.getStartTime(), run.getEndTime(), run.getQueueWaitTime());
+                        clientRequest.getCompileTimeNanos(jobId), clientRequest.getElapsedTimeMillis(),
+                        run.getCreateTime(), run.getStartTime(), run.getEndTime(), run.getQueueWaitTime());
             } else {
                 response = new ClientInfoResponseMessage(ncReqId, true);
             }

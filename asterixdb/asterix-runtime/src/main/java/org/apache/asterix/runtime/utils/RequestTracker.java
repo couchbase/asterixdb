@@ -102,6 +102,17 @@ public class RequestTracker implements IRequestTracker {
 
     @Override
     public void notifyResultSweep(JobId jobId, String requestId) {
+        if (requestId == null) {
+            return;
+        }
+        IClientRequest request = asyncRequests.get(requestId);
+        if (request != null) {
+            request.resultSwept(jobId);
+            if (request.hasPendingResults()) {
+                // kept as long as the client can still fetch any of its results
+                return;
+            }
+        }
         removeAsyncOrDeferredRequest(requestId);
     }
 

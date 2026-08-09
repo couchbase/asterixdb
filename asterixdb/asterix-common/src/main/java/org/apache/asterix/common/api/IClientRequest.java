@@ -147,4 +147,22 @@ public interface IClientRequest {
      */
     void jobFinished(JobId jobId, JobStatus jobStatus, List<Exception> exceptions);
 
+    /**
+     * Called when a handle to the given job's results was returned to the client, i.e. they must be
+     * kept until fetched or expired.
+     *
+     * @param jobId the job id
+     */
+    void markResultPending(JobId jobId);
+
+    /**
+     * Called when the given job's results were swept, i.e. they can no longer be fetched.
+     *
+     * @param jobId the job id
+     */
+    void resultSwept(JobId jobId);
+
+    /** @return true if the client may still fetch the results of any job of this request */
+    boolean hasPendingResults();
+
 }

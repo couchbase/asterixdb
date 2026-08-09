@@ -78,7 +78,7 @@ public class AsyncRequestsAPIUtil {
         if (jobRecord == null) {
             LOGGER.warn("Job record not found for job {}, request {}. Removing request tracking info", jobId,
                     requestId);
-            removeRequest(appCtx, requestId);
+            notifyResultSwept(appCtx, jobId, requestId);
             return;
         }
         if (!jobRecord.isDone()) {
@@ -92,7 +92,7 @@ public class AsyncRequestsAPIUtil {
                     "Result metadata not found for job {}, result set {}, request {}. Removing request tracking info and job record",
                     jobId, resultSetId, requestId);
             resultDirectoryService.sweep(jobId);
-            removeRequest(appCtx, requestId);
+            notifyResultSwept(appCtx, jobId, requestId);
             return;
         }
 
@@ -110,12 +110,13 @@ public class AsyncRequestsAPIUtil {
 
         // Clean up result directory and request tracking
         resultDirectoryService.sweep(jobId);
-        removeRequest(appCtx, requestId);
+        notifyResultSwept(appCtx, jobId, requestId);
     }
 
-    private static void removeRequest(ICcApplicationContext appCtx, String requestId) {
+    private static void notifyResultSwept(ICcApplicationContext appCtx, JobId jobId, String requestId) {
         if (requestId != null) {
-            appCtx.getRequestTracker().removeAsyncOrDeferredRequest(requestId);
+            // the request is dropped only once it has no results left to fetch
+            appCtx.getRequestTracker().notifyResultSweep(jobId, requestId);
         }
     }
 

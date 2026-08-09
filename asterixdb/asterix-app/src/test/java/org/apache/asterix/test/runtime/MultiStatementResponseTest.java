@@ -20,10 +20,15 @@ package org.apache.asterix.test.runtime;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.asterix.api.common.AsterixHyracksIntegrationUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -44,8 +49,10 @@ public class MultiStatementResponseTest {
 
     private static final AsterixHyracksIntegrationUtil integrationUtil = new AsterixHyracksIntegrationUtil();
     private static final String CC_QUERY_SERVICE = "http://localhost:19002/query/service";
-    private static final String NC_QUERY_SERVICE = "http://localhost:19004/query/service";
+    private static final String NC = "http://localhost:19004";
+    private static final String NC_QUERY_SERVICE = NC + "/query/service";
     private static final String TWO_STATEMENTS = "select 1; select 2;";
+    private static final Pattern HANDLE = Pattern.compile("\"handle\"\\s*:\\s*\"([^\"]+)\"");
 
     @BeforeClass
     public static void setUp() throws Exception {
@@ -132,6 +139,49 @@ public class MultiStatementResponseTest {
         Assert.assertEquals(response.body(), 200, response.statusCode());
         Assert.assertTrue("expected a handle per statement in: " + response.body(),
                 StringUtils.countMatches(response.body(), "\"handle\"") == 2);
+    }
+
+    /**
+     * Every job of a request is its own, so a handle fetches whichever statement it names. The last is
+     * fetched first: the request used to know only its last job, and sweeping that one dropped the whole
+     * record, so the first handle answered 404 twice over.
+     */
+    @Test
+    public void everyDeferredHandleOfARequestFetches() throws Exception {
+        // include-host puts the request id in the handle, which is what the job is checked against
+        Response response = post(NC_QUERY_SERVICE, "{\"statement\": \"" + TWO_STATEMENTS
+                + "\", \"multi-statement\": true, \"mode\": \"deferred\", \"include-host\": false}");
+        Assert.assertEquals(response.body(), 200, response.statusCode());
+        List<String> handles = handlesOf(response.body());
+        Assert.assertEquals("expected a handle per statement in: " + response.body(), 2, handles.size());
+        Response second = get(handles.get(1));
+        Assert.assertEquals(second.body(), 200, second.statusCode());
+        Assert.assertTrue("expected the second statement's rows in: " + second.body(),
+                second.body().contains("{\"$1\":2}"));
+        Response first = get(handles.get(0));
+        Assert.assertEquals(first.body(), 200, first.statusCode());
+        Assert.assertTrue("expected the first statement's rows in: " + first.body(),
+                first.body().contains("{\"$1\":1}"));
+    }
+
+    /** The flat response repeats the handle field, which a JSON object cannot hold. */
+    private static List<String> handlesOf(String body) {
+        List<String> handles = new ArrayList<>();
+        Matcher matcher = HANDLE.matcher(body);
+        while (matcher.find()) {
+            handles.add(matcher.group(1));
+        }
+        return handles;
+    }
+
+    private static Response get(String handle) throws IOException {
+        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+            try (CloseableHttpResponse response =
+                    httpClient.execute(new HttpGet(handle.startsWith("http") ? handle : NC + handle))) {
+                return new Response(response.getStatusLine().getStatusCode(),
+                        EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8));
+            }
+        }
     }
 
     private static Response post(String endpoint, String body) throws IOException {
