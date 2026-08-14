@@ -1,0 +1,39 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+use test;
+
+-- 20000 documents, each holding a 10 element array, so an unnested scan emits 200000 tuples while
+-- the collection holds 20000 documents. The key takes 3000 distinct values across the whole
+-- collection, which is above the 1063 document sample target and far below the document count.
+INSERT INTO collA (
+    SELECT VALUE {
+        "a_id": i,
+        "lines": (SELECT VALUE { "k": (i * 10 + j) % 3000 } FROM range(0, 9) j)
+    }
+    FROM range(1, 20000) i
+);
+
+INSERT INTO collB (
+    SELECT VALUE {
+        "b_id": i,
+        "lines": (SELECT VALUE { "k": (i * 10 + j) % 3000 } FROM range(0, 9) j)
+    }
+    FROM range(1, 20000) i
+);

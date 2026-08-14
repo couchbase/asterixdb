@@ -61,4 +61,19 @@
             <output-dir compare="Text">self-join-advise</output-dir>
         </compilation-unit>
     </test-case>
+    <test-case FilePath="cbo-join">
+        <compilation-unit name="computed-join-predicate">
+            <output-dir compare="Text">computed-join-predicate</output-dir>
+        </compilation-unit>
+    </test-case>
+    <test-case FilePath="cbo-join">
+        <compilation-unit name="computed-join-predicate-sampled-side">
+            <output-dir compare="Text">computed-join-predicate-sampled-side</output-dir>
+        </compilation-unit>
+    </test-case>
+    <test-case FilePath="cbo-join">
+        <compilation-unit name="both-unnest-join">
+            <output-dir compare="Text">both-unnest-join</output-dir>
+        </compilation-unit>
+    </test-case>
 </test-group>

@@ -19,7 +19,8 @@
 
 package org.apache.asterix.optimizer.rules.cbo;
 
-import static org.apache.asterix.om.functions.BuiltinFunctions.getBuiltinFunctionInfo;
+import static org.apache.hyracks.util.annotations.AiProvenance.Agent.CLAUDE_OPUS_4_8;
+import static org.apache.hyracks.util.annotations.AiProvenance.Tool.CLAUDE_CODE_UI;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -83,6 +84,7 @@ import org.apache.hyracks.algebricks.core.algebra.util.OperatorPropertiesUtil;
 import org.apache.hyracks.api.exceptions.ErrorCode;
 import org.apache.hyracks.api.exceptions.IWarningCollector;
 import org.apache.hyracks.api.exceptions.Warning;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -210,7 +212,7 @@ public class Stats {
             //At this point, a single join will be treated as an EQ join even if it is not. Not ideal but no other choice
             // for example interval-overlap falls into this case. For some reason, joining samples with interval-overlap fails,
             // so defaulting to this case.
-            double seln = naiveJoinSelectivity(exprUsedVars, card1, card2, idx1, idx2, unnestOp1, unnestOp2);
+            double seln = naiveJoinSelectivity(joinExpr, card1, card2, idx1, idx2, unnestOp1, unnestOp2);
             return seln;
         }
 
@@ -291,33 +293,33 @@ public class Stats {
         return false;
     }
 
-    private double naiveJoinSelectivity(List<LogicalVariable> exprUsedVars, double card1, double card2, int idx1,
+    private double naiveJoinSelectivity(AbstractFunctionCallExpression joinExpr, double card1, double card2, int idx1,
             int idx2, boolean unnestOp1, boolean unnestOp2) throws AlgebricksException {
         AbstractLeafInput leafInput;
-        LogicalVariable var;
 
         if (unnestOp1) {// we cannot choose teh side with an array as we need the unnesting scaling factor also.
             // have to see if there are other alternatives later
             leafInput = joinEnum.leafInputs.get(idx2 - 1);
-            var = exprUsedVars.get(1);
         } else if (unnestOp2) {
             leafInput = joinEnum.leafInputs.get(idx1 - 1);
-            var = exprUsedVars.get(0);
         } else {
             // choose the smaller side sample; better results this way for sure!
             if (card1 < card2) {
                 leafInput = joinEnum.leafInputs.get(idx1 - 1);
-                var = exprUsedVars.get(0);
             } else {
                 leafInput = joinEnum.leafInputs.get(idx2 - 1);
-                var = exprUsedVars.get(1);
             }
         }
         Index index = findIndex((RealLeafInput) leafInput);
         if (index == null) {
             return 1.0;
         }
-        List<List<IAObject>> result = runSamplingQueryDistinct(this.optCtx, leafInput.getOp(), var, index);
+        // the join key of the chosen side is an expression, not necessarily a column; count its distinct values
+        ILogicalExpression joinKeyExpr = findSampledSideJoinKeyExpr(leafInput.getOp(), joinExpr);
+        if (joinKeyExpr == null) {
+            return 1.0;
+        }
+        List<List<IAObject>> result = runSamplingQueryDistinct(this.optCtx, leafInput.getOp(), joinKeyExpr, index);
         if (result == null) {
             return 1.0;
         }
@@ -344,7 +346,64 @@ public class Stats {
         if (numDistincts > details.getSourceCardinality()) {
             numDistincts = details.getSourceCardinality(); // cannot exceed table cardinality
         }
+        LOGGER.info("***naive join selectivity: distinct({}) = {} from sample; selectivity = {}***", joinKeyExpr,
+                numDistincts, 1.0 / numDistincts);
         return 1.0 / numDistincts; // this is the expected selectivity for joins for Fk-PK and Fk-Fk joins
+    }
+
+    /**
+     * Returns the join-key expression of the side of {@code joinExpr} that {@code leafInputOp} produces,
+     * or {@code null} when that side cannot be identified.
+     * <p>
+     * {@link #naiveJoinSelectivity} estimates the join selectivity as {@code 1/distinct(join key)} of one
+     * side, computed from that side's sample. The join key of a side is in general an <em>expression</em>,
+     * not a column: in {@code R.a * R.b mod 100 = S.c} the key of R is {@code R.a * R.b mod 100}. It used
+     * to be assumed that the predicate's used variables pair up positionally with the two leaf inputs of
+     * the join -- the first used variable with the first leaf input, the second with the second one --
+     * which only holds for the shape {@code R.a op S.b}. When one side is computed, that side contributes
+     * more than one used variable (the defining ASSIGN is inlined into the predicate by
+     * {@code JoinEnum.findJoinConditionsAndDoTC}), and the positional pairing then hands back a variable
+     * that the chosen leaf input does not even produce.
+     * <p>
+     * The argument of the binary predicate whose used variables are all live in {@code leafInputOp}
+     * <em>is</em> that side's join key, so it is identified from liveness rather than from position, and
+     * the two arguments are required to partition cleanly across the two sides. {@code null} is returned
+     * when the predicate is not binary, when neither argument's variables are all live in the chosen leaf
+     * input, or when one argument mixes variables of both sides -- in all of those cases the sample of this
+     * leaf input cannot yield the distinct count of a join key, and the caller falls back to its default
+     * selectivity.
+     */
+    @AiProvenance(agent = CLAUDE_OPUS_4_8, tool = CLAUDE_CODE_UI, notes = "Identify the sampled side's join-key expression from liveness instead of position")
+    private static ILogicalExpression findSampledSideJoinKeyExpr(ILogicalOperator leafInputOp,
+            AbstractFunctionCallExpression joinExpr) throws AlgebricksException {
+        List<Mutable<ILogicalExpression>> args = joinExpr.getArguments();
+        if (args.size() != 2) {
+            // not a binary comparison; there is no "the other side" to attribute the remaining variables to
+            return null;
+        }
+        List<LogicalVariable> liveVars = liveVariablesOf(leafInputOp);
+        ILogicalExpression arg0 = args.get(0).getValue(), arg1 = args.get(1).getValue();
+        List<LogicalVariable> argVars0 = usedVariablesOf(arg0), argVars1 = usedVariablesOf(arg1);
+        // an argument belongs to this side only if it has variables and every one of them is live here; it
+        // belongs to the other side only if none of its variables is live here. A constant argument belongs
+        // to neither, and an argument mixing variables of both sides belongs to neither.
+        if (isFromThisSide(argVars0, liveVars) && isFromOtherSide(argVars1, liveVars)) {
+            return arg0;
+        }
+        if (isFromThisSide(argVars1, liveVars) && isFromOtherSide(argVars0, liveVars)) {
+            return arg1;
+        }
+        return null;
+    }
+
+    @AiProvenance(agent = CLAUDE_OPUS_4_8, tool = CLAUDE_CODE_UI, notes = "Side attribution helper for findSampledSideJoinKeyExpr")
+    private static boolean isFromThisSide(List<LogicalVariable> argVars, List<LogicalVariable> liveVars) {
+        return !argVars.isEmpty() && liveVars.containsAll(argVars);
+    }
+
+    @AiProvenance(agent = CLAUDE_OPUS_4_8, tool = CLAUDE_CODE_UI, notes = "Side attribution helper for findSampledSideJoinKeyExpr")
+    private static boolean isFromOtherSide(List<LogicalVariable> argVars, List<LogicalVariable> liveVars) {
+        return !argVars.isEmpty() && argVars.stream().noneMatch(liveVars::contains);
     }
 
     private double findJoinSelFromSamples(RealLeafInput left, RealLeafInput right, Index index1, Index index2,
@@ -900,7 +959,30 @@ public class Stats {
 
     protected List<List<IAObject>> runSamplingQueryDistinct(IOptimizationContext ctx, ILogicalOperator op,
             LogicalVariable var, Index index) throws AlgebricksException {
+        return runSamplingQueryDistinct(ctx, op, new VariableReferenceExpression(var), index);
+    }
+
+    /**
+     * Counts the distinct values of {@code keyExpr} in the sample of the dataset scanned by {@code op}.
+     * {@code keyExpr} is evaluated by an ASSIGN inserted on top of the copied subtree, so it may be any
+     * expression over the variables that subtree produces and not just a bare variable reference. When it
+     * <em>is</em> a bare variable reference no ASSIGN is added, so the plan is exactly the one that was
+     * built before expressions were supported.
+     */
+    @AiProvenance(agent = CLAUDE_OPUS_4_8, tool = CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "Count distinct values of an expression, not only of a variable")
+    protected List<List<IAObject>> runSamplingQueryDistinct(IOptimizationContext ctx, ILogicalOperator op,
+            ILogicalExpression keyExpr, Index index) throws AlgebricksException {
         LOGGER.info("***running sample query***");
+
+        List<LogicalVariable> keyExprVars = usedVariablesOf(keyExpr);
+        if (keyExprVars.isEmpty() || !liveVariablesOf(op).containsAll(keyExprVars)) {
+            // The plan built below counts the distinct values of keyExpr, so every variable it references must
+            // be produced by op. If one is not, keyExpr has no type in the subtree below it and typing the
+            // sampling plan would fail. Callers treat null as "no estimate available from the sample".
+            LOGGER.info("***cannot sample {}: the subtree being sampled does not produce all of {}***", keyExpr,
+                    keyExprVars);
+            return null;
+        }
 
         IOptimizationContext newCtx = ctx.getOptimizationContextFactory().cloneOptimizationContext(ctx);
 
@@ -931,11 +1013,28 @@ public class Stats {
             scanOp.setDataSource(sampledatasource);
         }
 
+        // the join key may be a computed expression; evaluate it with an assign so that the distinct count
+        // below is the distinct count of the key itself and not of one of the columns it is computed from.
+        LogicalVariable var;
+        ILogicalOperator distinctInput;
+        if (keyExpr.getExpressionTag() == LogicalExpressionTag.VARIABLE) {
+            var = ((VariableReferenceExpression) keyExpr).getVariableReference();
+            distinctInput = newLogOp;
+        } else {
+            var = newCtx.newVar();
+            // clone: the expression is still installed in the real join condition, which must not be touched
+            AssignOperator keyAssignOp = new AssignOperator(var, new MutableObject<>(keyExpr.cloneExpression()));
+            keyAssignOp.getInputs().add(new MutableObject<>(newLogOp));
+            keyAssignOp.setExecutionMode(newLogOp.getExecutionMode());
+            keyAssignOp.setSourceLocation(newLogOp.getSourceLocation());
+            distinctInput = keyAssignOp;
+        }
+
         AbstractLogicalExpression inputVarRef = new VariableReferenceExpression(var, newLogOp.getSourceLocation());
-        // add a project operator on top of newLogOp
+        // add a project operator on top of the assign (or of newLogOp when the key is already a variable)
         ProjectOperator projOp = new ProjectOperator(var);
         projOp.getInputs().add(new MutableObject<>(null)); //add an input
-        projOp.getInputs().get(0).setValue(newLogOp);
+        projOp.getInputs().get(0).setValue(distinctInput);
         // add a distinct operator on top of the proj.
         List<Mutable<ILogicalExpression>> arguments = new ArrayList<>();
         VariableReferenceExpression e1 = new VariableReferenceExpression(var);
@@ -1053,6 +1152,18 @@ public class Stats {
         AggregateOperator newAggOp = new AggregateOperator(newVars2, aggExprList);
         newAggOp.getInputs().add(new MutableObject<>(assignOp));
         return helperFunction(newCtx, newAggOp);
+    }
+
+    private static List<LogicalVariable> liveVariablesOf(ILogicalOperator op) throws AlgebricksException {
+        List<LogicalVariable> liveVars = new ArrayList<>();
+        VariableUtilities.getLiveVariables(op, liveVars);
+        return liveVars;
+    }
+
+    private static List<LogicalVariable> usedVariablesOf(ILogicalExpression expr) {
+        List<LogicalVariable> usedVars = new ArrayList<>();
+        expr.getUsedVariables(usedVars);
+        return usedVars;
     }
 
     private List<MutableObject> createMutableObjectArray(List<LogicalVariable> vars) {

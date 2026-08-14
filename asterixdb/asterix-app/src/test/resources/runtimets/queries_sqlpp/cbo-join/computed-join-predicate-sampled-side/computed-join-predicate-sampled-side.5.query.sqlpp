@@ -1,0 +1,52 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+
+/*
+ * Description  : The plan for the query in step 4. The join selectivity for the computed key
+ *              : su_suppkey MOD 10 + su_nationkey MOD 5 must come from the distinct count of that
+ *              : expression, not of either column it reads, so the estimated cardinalities below
+ *              : pin the behaviour that the rows comparison in step 4 cannot see.
+ * Expected Res : Success
+ */
+
+use test;
+
+-- The unnest of o_orderline makes the cost based optimizer estimate this join from the supplier
+-- sample, and the join key of the supplier side is the computed expression
+-- su_suppkey MOD 10 + su_nationkey MOD 5. Because supplier is joined to nation with an explicit ON
+-- clause, the assign holding that expression cannot be pushed below the join into the supplier leaf
+-- input, so it is inlined into the join predicate and the predicate carries an expression -- not a
+-- variable -- on the side that is sampled. The distinct count that drives the join selectivity must
+-- be the distinct count of that expression (10) rather than of either column it reads (100 and 25).
+EXPLAIN
+SELECT r.r_name AS region, su.su_nationkey AS supplier_nation,
+       COUNT(DISTINCT ol.ol_i_id) AS unique_items_ordered,
+       COUNT(DISTINCT o.o_c_id)   AS unique_customers,
+       SUM(ol.ol_quantity)        AS total_quantity_ordered
+FROM supplier su
+     JOIN nation n ON su.su_nationkey = n.n_nationkey
+     JOIN region r ON n.n_regionkey = r.r_regionkey,
+     orders o, o.o_orderline ol, item i
+WHERE ol.ol_i_id = i.i_id
+  AND i.i_data LIKE '%b'
+  AND ol.ol_supply_w_id = su.su_suppkey MOD 10 + su.su_nationkey MOD 5
+  AND o.o_entry_d >= '2016-01-01 00:00:00.000000'
+GROUP BY r.r_name, su.su_nationkey
+ORDER BY total_quantity_ordered DESC, region, supplier_nation;

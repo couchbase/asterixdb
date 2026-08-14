@@ -1,0 +1,35 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+use test;
+
+-- EXPLAIN only. The join itself is roughly 13 million rows, which is not what this test is about.
+--
+-- The expected result is a regex file. naiveJoinSelectivity samples an unnested leaf input here,
+-- so the distinct count is measured over unnested tuples while the estimator sample size and the
+-- cardinality cap are both document counts. The count ends up clamped to the collection
+-- cardinality of about 20000 rather than the 3000 distinct keys that step 5 measures, which puts
+-- the join cardinality near 2e6 instead of the true 1.3e7. The estimate is matched by order of
+-- magnitude on purpose: the clamp lands on the sample derived source cardinality, which varies by
+-- a fraction of a percent between runs even with a fixed sample-seed, so the exact digits are not
+-- reproducible.
+EXPLAIN
+SELECT COUNT(*) AS c
+FROM collA a, a.lines la, collB b, b.lines lb
+WHERE la.k = lb.k;

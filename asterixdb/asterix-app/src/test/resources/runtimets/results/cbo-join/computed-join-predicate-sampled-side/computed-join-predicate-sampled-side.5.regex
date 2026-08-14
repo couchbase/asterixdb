@@ -1,0 +1,4 @@
+/-- HYBRID_HASH_JOIN/
+/assign \[\$\$[0-9]+\] <- \[numeric-add\(numeric-mod\(\$\$[0-9]+, 10\), numeric-mod\(\$\$[0-9]+, 5\)\)\]/
+/distribute result \[\$\$[0-9]+\] \[cardinality: [0-9]{4}\.[0-9]+/
+-/distribute result \[\$\$[0-9]+\] \[cardinality: [0-9]{1,3}\.[0-9]+/
