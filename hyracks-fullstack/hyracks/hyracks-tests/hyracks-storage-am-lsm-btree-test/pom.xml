@@ -73,6 +73,12 @@
     </dependency>
     <dependency>
       <groupId>org.apache.hyracks</groupId>
+      <artifactId>hyracks-storage-am-lsm-btree-column</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hyracks</groupId>
       <artifactId>hyracks-storage-am-common</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>

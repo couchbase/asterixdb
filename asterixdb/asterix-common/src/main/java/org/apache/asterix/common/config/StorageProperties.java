@@ -44,6 +44,7 @@ import org.apache.hyracks.api.config.IOptionType;
 import org.apache.hyracks.api.config.Section;
 import org.apache.hyracks.storage.common.buffercache.IBufferCache;
 import org.apache.hyracks.util.StorageUtil;
+import org.apache.hyracks.util.annotations.AiProvenance;
 
 public class StorageProperties extends AbstractProperties {
 
@@ -69,7 +70,6 @@ public class StorageProperties extends AbstractProperties {
         STORAGE_GLOBAL_CLEANUP(BOOLEAN, true),
         STORAGE_GLOBAL_CLEANUP_TIMEOUT(POSITIVE_INTEGER, (int) TimeUnit.MINUTES.toSeconds(10)),
         STORAGE_COLUMN_MAX_TUPLE_COUNT(NONNEGATIVE_INTEGER, 15000),
-        STORAGE_COLUMN_SAMPLES_PER_PAGE(NONNEGATIVE_INTEGER, 1),
         STORAGE_COLUMN_FREE_SPACE_TOLERANCE(DOUBLE, 0.15d),
         STORAGE_COLUMN_MAX_LEAF_NODE_SIZE(INTEGER_BYTE_UNIT, StorageUtil.getIntSizeInBytes(10, MEGABYTE)),
         STORAGE_FORMAT(STRING, "row"),
@@ -115,7 +115,6 @@ public class StorageProperties extends AbstractProperties {
                 case STORAGE_PARTITIONS_COUNT:
                 case STORAGE_FORMAT:
                 case STORAGE_COLUMN_MAX_TUPLE_COUNT:
-                case STORAGE_COLUMN_SAMPLES_PER_PAGE:
                 case STORAGE_COLUMN_FREE_SPACE_TOLERANCE:
                 case STORAGE_COLUMN_MAX_LEAF_NODE_SIZE:
                 case STORAGE_MAX_SAMPLE_LEAF_ATTEMPTS:
@@ -173,9 +172,6 @@ public class StorageProperties extends AbstractProperties {
                     return "The maximum time to wait for nodes to respond to global storage cleanup requests";
                 case STORAGE_COLUMN_MAX_TUPLE_COUNT:
                     return "The maximum number of tuples to be stored per a mega leaf page";
-                case STORAGE_COLUMN_SAMPLES_PER_PAGE:
-                    return "The number of sample tuples to collect from each accepted mega-page during columnar sampling. "
-                            + "Values > 1 reduce Phase 2 I/O by amortizing column-stream setup cost across multiple tuples.";
                 case STORAGE_COLUMN_FREE_SPACE_TOLERANCE:
                     return "The percentage of the maximum tolerable empty space for a physical mega leaf page (e.g.,"
                             + " 0.15 means a physical page with 15% or less empty space is tolerable)";
@@ -201,10 +197,16 @@ public class StorageProperties extends AbstractProperties {
                     return "The maximum time in milliseconds to wait for acquiring a buffer from the column buffer pool.";
                 case STORAGE_MAX_SAMPLE_LEAF_ATTEMPTS:
                     return "The maximum number of attempts to find a random leaf page during B-tree sampling. "
-                            + "If exceeded, the sampling operation will fail with an error.";
+                            + "If exceeded, the sampling operation stops early and returns a smaller sample.";
                 case STORAGE_SAMPLE_LEAF_DRAW_BATCH_SIZE:
-                    return "The batch size of random draws to perform at once during B-tree sampling. "
-                            + "Higher values reduce random I/O but increase memory overhead during sampling.";
+                    return "The upper bound on the number of random draws performed per refill during B-tree "
+                            + "sampling. The effective batch size is the smaller of this value and the sample "
+                            + "still outstanding, so it has no effect on a sample smaller than it. It is retained "
+                            + "as a resource bound rather than a tuning knob: a sampling cursor allocates draw "
+                            + "buffers proportional to the batch size, so this caps them at about 0.5 MB per "
+                            + "cursor however large a sample is requested. Lowering it below the sample size only "
+                            + "costs I/O locality - batches are always consumed in full, so it cannot affect which "
+                            + "tuples the sample contains.";
                 default:
                     throw new IllegalStateException("NYI: " + this);
             }
@@ -229,7 +231,6 @@ public class StorageProperties extends AbstractProperties {
         public boolean hidden() {
             switch (this) {
                 case STORAGE_GLOBAL_CLEANUP:
-                case STORAGE_COLUMN_SAMPLES_PER_PAGE:
                 case STORAGE_MAX_SAMPLE_LEAF_ATTEMPTS:
                 case STORAGE_SAMPLE_LEAF_DRAW_BATCH_SIZE:
                     return true;
@@ -288,6 +289,18 @@ public class StorageProperties extends AbstractProperties {
         return accessor.getInt(Option.STORAGE_MAX_SAMPLE_LEAF_ATTEMPTS);
     }
 
+    /**
+     * Upper bound on one batch of random leaf draws during sampling.
+     * <p>
+     * Both sample cursors size a batch at {@code min(this, outstanding shortfall)}, so at any sane setting this value
+     * does not bind and has no observable effect on the emitted sample. It is nevertheless <b>kept, not deprecated</b>,
+     * because "inert" is not the same as "purposeless": the per-cursor draw buffers are sized to the batch, so this is
+     * the ceiling on that allocation — about 0.5 MB per sampling cursor at the default — and without it a request for a
+     * very large sample would allocate in proportion. Lowering it below the sample size shrinks each batch and costs
+     * I/O locality only: batches are always consumed in full, so the batch size cannot influence <em>which</em> tuples
+     * the sample contains. Removing the option would mean re-deriving that ceiling from something else, for no gain.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.DOC_GENERATED, notes = "Record why the sample leaf-draw batch size is retained now that it no longer binds in practice")
     public int getSampleLeafDrawBatchSize() {
         return accessor.getInt(Option.STORAGE_SAMPLE_LEAF_DRAW_BATCH_SIZE);
     }
@@ -382,10 +395,6 @@ public class StorageProperties extends AbstractProperties {
 
     public int getColumnMaxTupleCount() {
         return accessor.getInt(Option.STORAGE_COLUMN_MAX_TUPLE_COUNT);
-    }
-
-    public int getColumnSamplesPerPage() {
-        return accessor.getInt(Option.STORAGE_COLUMN_SAMPLES_PER_PAGE);
     }
 
     public double getColumnFreeSpaceTolerance() {

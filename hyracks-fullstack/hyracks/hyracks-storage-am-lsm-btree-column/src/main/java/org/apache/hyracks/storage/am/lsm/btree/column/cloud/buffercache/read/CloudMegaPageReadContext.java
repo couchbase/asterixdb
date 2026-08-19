@@ -129,6 +129,10 @@ public final class CloudMegaPageReadContext implements IBufferCacheReadContext {
              * Note: 'empty' can be false while 'cloudOnly is true'. We cannot read from disk as the page can be
              * evicted at any moment. In other words, the sweeper told us that it is going to evict this page; hence
              * 'cloudOnly' is true.
+             *
+             * Only MERGE is exempted from persisting: an EXISTENCE probe reads a component that stays, and the
+             * only pages it pins through this context are page-zero segments, which every later query needs
+             * anyway -- so it persists them exactly as a QUERY would.
              */
             boolean persist = empty && !cloudOnly && !evictable && operation != MERGE && drive.isUnpressured();
             readFromStream(ioManager, fileHandle, header, cPage, persist, threadStats);

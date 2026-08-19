@@ -34,7 +34,6 @@ import org.apache.hyracks.storage.am.lsm.btree.column.utils.ColumnUtil;
 import org.apache.hyracks.storage.am.lsm.btree.impls.LSMBTree;
 import org.apache.hyracks.storage.am.lsm.btree.impls.LSMBTreeBatchPointSearchCursor;
 import org.apache.hyracks.storage.am.lsm.btree.impls.LSMBTreeRangeSearchCursor;
-import org.apache.hyracks.storage.am.lsm.btree.impls.LSMIndexSampleCursor;
 import org.apache.hyracks.storage.am.lsm.common.api.IComponentMetadata;
 import org.apache.hyracks.storage.am.lsm.common.api.ILSMDiskComponentFactory;
 import org.apache.hyracks.storage.am.lsm.common.api.ILSMIOOperationCallbackFactory;
@@ -143,9 +142,8 @@ public class LSMColumnBTree extends LSMBTree {
         return new LSMColumnBatchPointSearchCursor(opCtx);
     }
 
-    @Override
-    public LSMIndexSampleCursor createSampleCollectorCursor(ILSMIndexOperationContext opContext) {
-        return new LSMIndexSampleCursor(opContext, new LSMColumnBatchPointSearchCursor(opContext));
+    public LSMColumnSampleLivenessSearchCursor createSampleLivenessSearchCursor(ILSMIndexOperationContext opCtx) {
+        return new LSMColumnSampleLivenessSearchCursor(opCtx);
     }
 
     @Override

@@ -47,7 +47,6 @@ public class BTreeSampleCollectorOperatorDescriptorNodePushable extends BTreeSea
     private final long sampleSeed;
     private final int maxSampleLeafAttempts;
     private final int sampleLeafDrawBatchSize;
-    private final int columnSamplesPerPage;
     private final IHyracksTaskContext ctx;
 
     public BTreeSampleCollectorOperatorDescriptorNodePushable(IHyracksTaskContext ctx, int partition,
@@ -58,7 +57,7 @@ public class BTreeSampleCollectorOperatorDescriptorNodePushable extends BTreeSea
             ITupleFilterFactory tupleFilterFactory, long outputLimit, ITupleProjectorFactory tupleProjectorFactory,
             ITuplePartitionerFactory tuplePartitionerFactory, int[][] partitionsMap,
             int sampleCardinalityTargetPerPartition, long sampleSeed, int maxSampleLeafAttempts,
-            int sampleLeafDrawBatchSize, int columnSamplesPerPage) throws HyracksDataException {
+            int sampleLeafDrawBatchSize) throws HyracksDataException {
         super(ctx, partition, inputRecDesc, lowKeyFields, highKeyFields, lowKeyInclusive, highKeyInclusive,
                 minFilterKeyFields, maxFilterKeyFields, indexHelperFactory, retainInput, retainMissing,
                 missingWriterFactory, searchCallbackFactory, false, null, tupleFilterFactory, outputLimit, false, null,
@@ -67,7 +66,6 @@ public class BTreeSampleCollectorOperatorDescriptorNodePushable extends BTreeSea
         this.sampleSeed = sampleSeed;
         this.maxSampleLeafAttempts = maxSampleLeafAttempts;
         this.sampleLeafDrawBatchSize = sampleLeafDrawBatchSize;
-        this.columnSamplesPerPage = columnSamplesPerPage;
         this.ctx = ctx;
     }
 
@@ -78,7 +76,6 @@ public class BTreeSampleCollectorOperatorDescriptorNodePushable extends BTreeSea
         iap.getParameters().put(LSMIndexSampleCursor.SAMPLE_SEED, sampleSeed);
         iap.getParameters().put(LSMIndexSampleCursor.SAMPLE_MAX_LEAF_ATTEMPTS, maxSampleLeafAttempts);
         iap.getParameters().put(LSMIndexSampleCursor.SAMPLE_LEAF_DRAW_BATCH_SIZE, sampleLeafDrawBatchSize);
-        iap.getParameters().put(LSMIndexSampleCursor.SAMPLE_COLUMN_SAMPLES_PER_PAGE, columnSamplesPerPage);
     }
 
     @Override

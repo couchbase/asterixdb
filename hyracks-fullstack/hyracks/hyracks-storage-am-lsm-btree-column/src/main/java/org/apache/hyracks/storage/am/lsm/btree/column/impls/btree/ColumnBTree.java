@@ -122,14 +122,14 @@ public class ColumnBTree extends DiskBTree {
         @Override
         public ITreeIndexCursor createSampleCursor(long componentSampleCardinality, long sampleSeed,
                 ILSMIndexBatchPointCursor searchCursor, int maxLeafAttempts, int leafDrawBatchSize,
-                int maxLeafTupleCount, int samplesPerPage, ITupleAcceptor antimatterAcceptor) {
+                int maxLeafTupleCount, ITupleAcceptor antimatterAcceptor) {
             // antimatterAcceptor is unused here: column tuples (IColumnTupleIterator extends ILSMTreeTupleReference)
             // report antimatter directly, so ColumnBtreeSampleCursor checks it without the injected acceptor.
             ColumnBTreeLeafFrameFactory columnLeafFrameFactory = (ColumnBTreeLeafFrameFactory) leafFrameFactory;
             ColumnBTreeReadLeafFrame readLeafFrame = columnLeafFrameFactory.createReadFrame(projectionInfo);
             return new ColumnBtreeSampleCursor((ColumnBTree) btree, readLeafFrame, ctx, context,
                     componentSampleCardinality, sampleSeed, index, searchCursor, maxLeafAttempts, leafDrawBatchSize,
-                    maxLeafTupleCount, samplesPerPage);
+                    maxLeafTupleCount);
         }
 
         @Override
@@ -137,6 +137,15 @@ public class ColumnBTree extends DiskBTree {
             ColumnBTreeLeafFrameFactory columnLeafFrameFactory = (ColumnBTreeLeafFrameFactory) leafFrameFactory;
             ColumnBTreeReadLeafFrame readLeafFrame = columnLeafFrameFactory.createReadFrame(projectionInfo);
             return new ColumnBTreePointSearchCursor(
+                    readLeafFrame, (IIndexCursorStats) iap.getParameters()
+                            .getOrDefault(HyracksConstants.INDEX_CURSOR_STATS, NoOpIndexCursorStats.INSTANCE),
+                    index, context);
+        }
+
+        public ColumnBTreeExistencePointSearchCursor createExistencePointCursor() {
+            ColumnBTreeLeafFrameFactory columnLeafFrameFactory = (ColumnBTreeLeafFrameFactory) leafFrameFactory;
+            ColumnBTreeReadLeafFrame readLeafFrame = columnLeafFrameFactory.createReadFrame(projectionInfo);
+            return new ColumnBTreeExistencePointSearchCursor(
                     readLeafFrame, (IIndexCursorStats) iap.getParameters()
                             .getOrDefault(HyracksConstants.INDEX_CURSOR_STATS, NoOpIndexCursorStats.INSTANCE),
                     index, context);

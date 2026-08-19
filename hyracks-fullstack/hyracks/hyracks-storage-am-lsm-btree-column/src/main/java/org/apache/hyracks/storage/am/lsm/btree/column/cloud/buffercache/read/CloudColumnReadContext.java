@@ -19,6 +19,7 @@
 package org.apache.hyracks.storage.am.lsm.btree.column.cloud.buffercache.read;
 
 import static org.apache.hyracks.cloud.buffercache.context.DefaultCloudReadContext.readAndPersistPage;
+import static org.apache.hyracks.storage.am.lsm.btree.column.api.projection.ColumnProjectorType.EXISTENCE;
 import static org.apache.hyracks.storage.am.lsm.btree.column.api.projection.ColumnProjectorType.MERGE;
 import static org.apache.hyracks.storage.am.lsm.btree.column.api.projection.ColumnProjectorType.MODIFY;
 import static org.apache.hyracks.storage.am.lsm.btree.column.api.projection.ColumnProjectorType.QUERY;
@@ -68,7 +69,10 @@ public final class CloudColumnReadContext implements IColumnReadContext {
         columnCtx = new CloudMegaPageReadContext(operation, columnRanges, drive);
         projectedColumns = new BitSet();
         mergedPageRanges = AbstractPageRangesComputer.create(MAX_RANGES_COUNT);
-        if (operation == QUERY || operation == MODIFY) {
+        // MERGE reads every column, so it never consults projectedColumns (see prepareColumns' pinAll branch) and
+        // the set is deliberately left empty. EXISTENCE reports zero projected columns by construction, so the
+        // loop below is a no-op for it; it is listed anyway so the set always matches what the projection says.
+        if (operation == QUERY || operation == MODIFY || operation == EXISTENCE) {
             for (int i = 0; i < projectionInfo.getNumberOfProjectedColumns(); i++) {
                 int columnIndex = projectionInfo.getColumnIndex(i);
                 if (columnIndex >= 0) {
@@ -155,6 +159,9 @@ public final class CloudColumnReadContext implements IColumnReadContext {
         // Pinning all the segments of the page zero
         // as the column eviction logic is based on the length of the columns which
         // gets evaluated from the page zero segments.
+        // markAll is for MERGE only: it reads every column, so every segment's offsets are required. EXISTENCE
+        // needs the zeroth segment alone (primary keys are the lowest column indices, hence always in it), so it
+        // marks like a projected read and the unneeded segments are unpinned by columnRanges.reset below.
         BitSet pageZeroSegmentRanges =
                 leafFrame.markRequiredPageZeroSegments(projectedColumns, pageZeroId, operation == MERGE);
         // will unpin the non-required segments after columnRanges.reset()
@@ -179,6 +186,9 @@ public final class CloudColumnReadContext implements IColumnReadContext {
             pinAll(fileId, pageZeroId + numberOfPageZeroSegments - 1,
                     leafFrame.getMegaLeafNodeNumberOfPages() - numberOfPageZeroSegments, bufferCache);
         } else {
+            // QUERY/MODIFY pin the coalesced ranges of their projected columns. EXISTENCE lands here too, with an
+            // empty projectedColumns set: pinProjected skips primary keys (they live in page zero) so it pins
+            // nothing at all, which is the whole point of an existence-only probe on cloud storage.
             pinProjected(fileId, pageZeroId, bufferCache);
         }
     }

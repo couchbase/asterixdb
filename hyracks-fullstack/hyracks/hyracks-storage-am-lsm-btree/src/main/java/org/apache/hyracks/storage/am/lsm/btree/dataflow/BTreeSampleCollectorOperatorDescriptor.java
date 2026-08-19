@@ -39,7 +39,6 @@ public class BTreeSampleCollectorOperatorDescriptor extends BTreeSearchOperatorD
     private final long sampleSeed;
     private final int maxSampleLeafAttempts;
     private final int sampleLeafDrawBatchSize;
-    private final int columnSamplesPerPage;
 
     public BTreeSampleCollectorOperatorDescriptor(IOperatorDescriptorRegistry spec, RecordDescriptor outRecDesc,
             int[] lowKeyFields, int[] highKeyFields, boolean lowKeyInclusive, boolean highKeyInclusive,
@@ -51,7 +50,7 @@ public class BTreeSampleCollectorOperatorDescriptor extends BTreeSearchOperatorD
             byte[] searchCallbackProceedResultTrueValue, ITupleProjectorFactory tupleProjectorFactory,
             ITuplePartitionerFactory tuplePartitionerFactory, int[][] partitionsMap,
             int sampleCardinalityTargetPerPartition, long sampleSeed, int maxSampleLeafAttempts,
-            int sampleLeafDrawBatchSize, int columnSamplesPerPage) {
+            int sampleLeafDrawBatchSize) {
         super(spec, outRecDesc, lowKeyFields, highKeyFields, lowKeyInclusive, highKeyInclusive, indexHelperFactory,
                 retainInput, retainMissing, missingWriterFactory, searchCallbackFactory, minFilterFieldIndexes,
                 maxFilterFieldIndexes, appendIndexFilter, nonFilterWriterFactory, tupleFilterFactory, outputLimit,
@@ -61,7 +60,6 @@ public class BTreeSampleCollectorOperatorDescriptor extends BTreeSearchOperatorD
         this.sampleSeed = sampleSeed;
         this.maxSampleLeafAttempts = maxSampleLeafAttempts;
         this.sampleLeafDrawBatchSize = sampleLeafDrawBatchSize;
-        this.columnSamplesPerPage = columnSamplesPerPage;
     }
 
     @Override
@@ -72,7 +70,6 @@ public class BTreeSampleCollectorOperatorDescriptor extends BTreeSearchOperatorD
                 lowKeyInclusive, highKeyInclusive, minFilterFieldIndexes, maxFilterFieldIndexes, indexHelperFactory,
                 retainInput, retainMissing, missingWriterFactory, searchCallbackFactory, tupleFilterFactory,
                 outputLimit, tupleProjectorFactory, tuplePartitionerFactory, partitionsMap,
-                sampleCardinalityTargetPerPartition, sampleSeed, maxSampleLeafAttempts, sampleLeafDrawBatchSize,
-                columnSamplesPerPage);
+                sampleCardinalityTargetPerPartition, sampleSeed, maxSampleLeafAttempts, sampleLeafDrawBatchSize);
     }
 }

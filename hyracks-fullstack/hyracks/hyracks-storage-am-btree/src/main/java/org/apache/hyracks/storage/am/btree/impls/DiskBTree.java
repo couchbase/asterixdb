@@ -361,7 +361,7 @@ public class DiskBTree extends BTree {
 
         public ITreeIndexCursor createSampleCursor(long componentSampleCardinality, long sampleSeed,
                 ILSMIndexBatchPointCursor searchCursor, int maxLeafAttempts, int leafDrawBatchSize,
-                int maxLeafTupleCount, int samplesPerPage, ITupleAcceptor antimatterAcceptor) {
+                int maxLeafTupleCount, ITupleAcceptor antimatterAcceptor) {
             IBTreeLeafFrame leafFrame = (IBTreeLeafFrame) btree.getLeafFrameFactory().createFrame();
             return new DiskBTreeSampleCursor((DiskBTree) btree, leafFrame, componentSampleCardinality, sampleSeed, ctx,
                     getBufferCacheOperationContext(), searchCursor, maxLeafAttempts, leafDrawBatchSize,

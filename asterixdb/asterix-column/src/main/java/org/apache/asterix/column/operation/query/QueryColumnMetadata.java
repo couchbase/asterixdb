@@ -44,6 +44,7 @@ import org.apache.asterix.column.metadata.AbstractColumnImmutableReadMetadata;
 import org.apache.asterix.column.metadata.schema.AbstractSchemaNode;
 import org.apache.asterix.column.metadata.schema.ObjectSchemaNode;
 import org.apache.asterix.column.metadata.schema.visitor.SchemaClipperVisitor;
+import org.apache.asterix.column.operation.lsm.merge.MergeColumnReadMetadata;
 import org.apache.asterix.column.util.SchemaJSONBuilderVisitor;
 import org.apache.asterix.column.values.IColumnValuesReader;
 import org.apache.asterix.column.values.IColumnValuesReaderFactory;
@@ -59,6 +60,7 @@ import org.apache.hyracks.data.std.api.IValueReference;
 import org.apache.hyracks.data.std.primitive.IntegerPointable;
 import org.apache.hyracks.storage.am.lsm.btree.column.api.AbstractColumnTupleReader;
 import org.apache.hyracks.storage.am.lsm.btree.column.api.projection.ColumnProjectorType;
+import org.apache.hyracks.storage.am.lsm.btree.column.api.projection.IColumnProjectionInfo;
 import org.apache.hyracks.util.LogRedactionUtil;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -155,6 +157,12 @@ public class QueryColumnMetadata extends AbstractColumnImmutableReadMetadata {
     @Override
     public int getNumberOfColumns() {
         return assembler.getNumberOfColumns();
+    }
+
+    @Override
+    public IColumnProjectionInfo createExistenceOnlyProjectionInfo() {
+        return MergeColumnReadMetadata.createExistenceOnly(getDatasetType(), getMetaType(), serializeColumnsMetadata(),
+                primaryKeyReaders);
     }
 
     @Override

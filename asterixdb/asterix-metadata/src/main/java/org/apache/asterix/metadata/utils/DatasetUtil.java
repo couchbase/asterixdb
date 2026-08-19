@@ -484,7 +484,7 @@ public class DatasetUtil {
                 indexHelperFactory, false, false, null, searchCallbackFactory, null, null, false, null, null, -1, false,
                 null, null, projectorFactory, null, partitioningProperties.getComputeStorageMap(),
                 sampleCardinalityTargetPerPartition, sampleSeed, storageProperties.getMaxSampleLeafAttempts(),
-                storageProperties.getSampleLeafDrawBatchSize(), storageProperties.getColumnSamplesPerPage());
+                storageProperties.getSampleLeafDrawBatchSize());
         AlgebricksPartitionConstraintHelper.setPartitionConstraintInJobSpec(spec, sampleOp, primaryPartitionConstraint);
         return sampleOp;
     }

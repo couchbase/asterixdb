@@ -53,4 +53,27 @@ public interface IColumnProjectionInfo {
      * @return the type of {@link IColumnTupleProjector} that created this projection info
      */
     ColumnProjectorType getProjectorType();
+
+    /**
+     * A key-only view of this projection, for accessors that only ask "does this key exist in this component?" —
+     * the sample cursor's liveness probe. Existence is settled by the PK binary search
+     * ({@code IColumnTupleIterator#findTupleIndex}, PK values only), so dropping the non-key columns cannot
+     * change an answer; it only avoids pinning mega-pages that are released unread. See
+     * {@code ColumnBTreeExistencePointSearchCursor}.
+     * <p>
+     * A reduced view <b>must</b> report {@link ColumnProjectorType#EXISTENCE}. Zero projected columns is not
+     * enough on cloud storage: {@code CloudColumnReadContext} branches on the projector type first, and for
+     * {@link ColumnProjectorType#MERGE} pins the whole mega-leaf without consulting the projected set at all.
+     * <p>
+     * Returning {@code this} — the default — means "no reduced view available": correct, just slower. An
+     * implementation that no existence probe can reach may instead throw {@link UnsupportedOperationException},
+     * so the assumption stays checked rather than silently supporting a path nothing exercises.
+     *
+     * @return a projection reporting zero projected columns, zero filtered columns and
+     *         {@link ColumnProjectorType#EXISTENCE}, or {@code this}
+     * @throws UnsupportedOperationException if this projection is never the one an existence probe is built from
+     */
+    default IColumnProjectionInfo createExistenceOnlyProjectionInfo() {
+        return this;
+    }
 }

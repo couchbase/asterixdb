@@ -144,9 +144,9 @@ public class LSMSampleFragmentationContaminationTest {
                 (DiskBTree.DiskBTreeAccessor) olderBtree.createAccessor(NoOpIndexAccessParameters.INSTANCE);
 
         // Aim to collect NUM_LIVE samples; maxLeafTupleCount=0 disables fill-rejection (not under test here).
-        ITreeIndexCursor sampleCursor = sampleAccessor.createSampleCursor(NUM_LIVE, SAMPLE_SEED, searchCursor,
-                /*maxLeafAttempts*/ 50000, /*leafDrawBatchSize*/ NUM_KEYS, /*maxLeafTupleCount*/ 0,
-                /*samplesPerPage*/ 0, AntimatterAwareTupleAcceptor.INSTANCE);
+        ITreeIndexCursor sampleCursor =
+                sampleAccessor.createSampleCursor(NUM_LIVE, SAMPLE_SEED, searchCursor, /*maxLeafAttempts*/ 50000,
+                        /*leafDrawBatchSize*/ NUM_KEYS, /*maxLeafTupleCount*/ 0, AntimatterAwareTupleAcceptor.INSTANCE);
 
         int emitted = 0;
         int leakedDeleted = 0;

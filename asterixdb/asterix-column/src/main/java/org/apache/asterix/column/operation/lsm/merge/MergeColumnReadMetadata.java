@@ -18,6 +18,7 @@
  */
 package org.apache.asterix.column.operation.lsm.merge;
 
+import static org.apache.hyracks.storage.am.lsm.btree.column.api.projection.ColumnProjectorType.EXISTENCE;
 import static org.apache.hyracks.storage.am.lsm.btree.column.api.projection.ColumnProjectorType.MERGE;
 
 import java.io.ByteArrayInputStream;
@@ -33,7 +34,9 @@ import org.apache.asterix.om.types.ARecordType;
 import org.apache.hyracks.data.std.api.IValueReference;
 import org.apache.hyracks.data.std.primitive.IntegerPointable;
 import org.apache.hyracks.storage.am.lsm.btree.column.api.AbstractColumnTupleReader;
+import org.apache.hyracks.storage.am.lsm.btree.column.api.projection.ColumnProjectorType;
 import org.apache.hyracks.storage.am.lsm.common.api.ILSMDiskComponent;
+import org.apache.hyracks.util.annotations.AiProvenance;
 
 /**
  * Merge column read metadata belongs to read an {@link ILSMDiskComponent}
@@ -42,11 +45,27 @@ import org.apache.hyracks.storage.am.lsm.common.api.ILSMDiskComponent;
  */
 public final class MergeColumnReadMetadata extends AbstractColumnImmutableReadMetadata {
     private final IColumnValuesReader[] columnReaders;
+    /**
+     * How many of {@link #columnReaders} are actually projected: {@code columnReaders.length} normally, and
+     * {@code 0} for the existence-only view produced by {@link #createExistenceOnlyProjectionInfo()}.
+     */
+    private final int numberOfProjectedColumns;
 
     private MergeColumnReadMetadata(ARecordType datasetType, ARecordType metaType, int numberOfPrimaryKeys,
             IColumnValuesReader[] columnReaders, IValueReference serializedMetadata) {
-        super(datasetType, metaType, numberOfPrimaryKeys, serializedMetadata, columnReaders.length, MERGE);
+        this(datasetType, metaType, numberOfPrimaryKeys, columnReaders, serializedMetadata, columnReaders.length,
+                MERGE);
+    }
+
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.GENERATED, notes = "Constructor taking an explicit projected-column count so an existence-only (key-only) view "
+            + "can share the parsed column readers")
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "Projector type is now a parameter so the existence-only view can report EXISTENCE instead of MERGE")
+    private MergeColumnReadMetadata(ARecordType datasetType, ARecordType metaType, int numberOfPrimaryKeys,
+            IColumnValuesReader[] columnReaders, IValueReference serializedMetadata, int numberOfProjectedColumns,
+            ColumnProjectorType projectorType) {
+        super(datasetType, metaType, numberOfPrimaryKeys, serializedMetadata, columnReaders.length, projectorType);
         this.columnReaders = columnReaders;
+        this.numberOfProjectedColumns = numberOfProjectedColumns;
     }
 
     /**
@@ -87,7 +106,28 @@ public final class MergeColumnReadMetadata extends AbstractColumnImmutableReadMe
 
     @Override
     public int getNumberOfProjectedColumns() {
-        return columnReaders.length;
+        return numberOfProjectedColumns;
+    }
+
+    @Override
+    public MergeColumnReadMetadata createExistenceOnlyProjectionInfo() {
+        throw new UnsupportedOperationException(
+                getClass().getSimpleName() + " is never the projection an existence probe is built from");
+    }
+
+    /**
+     * A key-only projection over {@code primaryKeyReaders}, for the sample cursor's newer-component liveness
+     * probe. Shaped as a merge projection because {@code MergeColumnTupleReference} is already the tuple
+     * reference that reads nothing but the primary keys
+     *
+     * @param primaryKeyReaders the component's primary-key readers, in key order (column {@code i} at index
+     *                          {@code i}), as {@code MergeColumnTupleReference#getPrimaryKeyReaders} reads them
+     * @see org.apache.asterix.column.operation.query.QueryColumnMetadata#createExistenceOnlyProjectionInfo()
+     */
+    public static MergeColumnReadMetadata createExistenceOnly(ARecordType datasetType, ARecordType metaType,
+            IValueReference serializedMetadata, IColumnValuesReader[] primaryKeyReaders) {
+        return new MergeColumnReadMetadata(datasetType, metaType, primaryKeyReaders.length, primaryKeyReaders,
+                serializedMetadata, 0, EXISTENCE);
     }
 
     @Override

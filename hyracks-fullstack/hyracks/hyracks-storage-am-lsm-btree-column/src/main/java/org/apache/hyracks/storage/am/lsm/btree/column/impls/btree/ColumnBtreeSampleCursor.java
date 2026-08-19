@@ -49,23 +49,24 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 
 /**
- * Two-phase column sample cursor.
+ * Two-phase column sample cursor. Splitting selection from collection is what keeps the cost proportional to the
+ * sample rather than to the component: phase 1 rejects most candidates, and only survivors are worth a mega-page
+ * load.
  * <p>
- * <b>Phase 1 — Selection (page0-only):</b> picks random leaf pages via batched
- * sorted draws to minimize random I/O, pins only page0, uses
- * {@link AbstractColumnTupleReference#startSamplingPage} +
- * {@link AbstractColumnTupleReference#seekForwardPKOnly} to position PKs without
- * loading column mega-pages. Per-page candidate indices are sorted ascending so the
- * sequential PK level decoders are scanned forward-only (no rewind). Checks antimatter
- * and newer-component existence from PK data alone. Accepted tuples are recorded as
- * packed {@code (pageId << 32) | tupleIndex} longs.
+ * <b>Phase 1 — selection, page0 only.</b> Draws random leaf pages, pins page0, and decides antimatter and
+ * newer-component liveness from PK data alone ({@link AbstractColumnTupleReference#startSamplingPage} +
+ * {@link AbstractColumnTupleReference#seekForwardPKOnly}), so no column mega-pages are touched. Survivors are
+ * recorded as packed {@code (pageId << 32) | tupleIndex}.
  * <p>
- * <b>Phase 2 — Collection (sorted, full column load):</b> the collected
- * samples are sorted by pageId (then tupleIndex within a page). For each
- * distinct page we do one full column load via {@code reset()}, then
- * advance to additional tuples on the same page via the cheap forward-only
- * {@code setAt()}. This amortises mega-page I/O and gives cache-friendly
- * sequential access.
+ * <b>Phase 2 — collection, sorted, full column load.</b> Survivors sorted by pageId, so each page's mega-pages
+ * are loaded once and further tuples on it reached by the forward-only {@code setAt()}.
+ * <p>
+ * Draws are sorted by pageId for sequential page0 I/O, which also makes same-page draws contiguous — they are
+ * consumed as one <b>page group</b> sharing a single rewind and forward PK pass, instead of one scan per draw.
+ * <p>
+ * <b>Every sort here orders a set that is then consumed in full.</b> That is the load-bearing property: a
+ * pageId-sorted set consumed only partly keeps the lowest pageIds, which is a spatial filter, not a sample. See
+ * {@link #runPhase1Selection()}.
  */
 public class ColumnBtreeSampleCursor extends EnforcedIndexCursor implements ITreeIndexCursor, IColumnReadMultiPageOp {
 
@@ -81,39 +82,30 @@ public class ColumnBtreeSampleCursor extends EnforcedIndexCursor implements ITre
     // u64: (pageId << 32) | tupleIndex
     private final LongSet seenTupleIndexes;
 
-    // Multiplier applied to the component tuple-population ceiling to derive the
-    // effective consecutive-miss give-up threshold (see doOpen). Mirrors
-    // DiskBTreeSampleCursor: the reservoir stalls well short of the target when the
-    // threshold only equals the population, so a multiple well above that is needed.
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.GENERATED, notes = "Population-scaled give-up threshold to stop near-exhaustive samples truncating at ~500 attempts")
-    private static final long POPULATION_ATTEMPT_MULTIPLIER = 32L;
+    // Give-up headroom must scale with the target, not be fixed: the coupon-collector tail near the end of
+    // collection grows with it, so a fixed threshold truncates near-exhaustive samples. Mirrors
+    // DiskBTreeSampleCursor. Scaled in doOpen().
+    private static final long SAMPLE_ATTEMPT_MULTIPLIER = 32L;
     private final int maxLeafFindingAttempts;
-    // Effective consecutive-miss give-up threshold, scaled to the component's tuple
-    // population in doOpen(). A fixed maxLeafFindingAttempts silently truncates
-    // near-exhaustive samples (target close to the component's live-tuple count) as
-    // random draws increasingly hit already-collected pages/tuples; scaling to the
-    // population keeps collection from stopping short while bounding the
-    // genuinely-exhausted case to O(population) draws. Mirrors DiskBTreeSampleCursor.
     private int effectiveMaxLeafFindingAttempts;
-    private final int samplesPerPage;
-    // Max number of random probes per page (oversampled vs samplesPerPage to absorb
-    // antimatter / collision / newer-component rejections).
-    private final int maxPageSlotRetries;
-    // Reused scratch buffer of per-page candidate tuple indices, sorted ascending so the
-    // PK level decoders can be scanned forward-only (no rewind) within a page.
-    private final int[] pageTupleCandidates;
     private final long componentSampleCardinality;
     private final Random randomNumGen;
 
-    // Phase 1 batched I/O draws stored as flat parallel primitive arrays (SoA).
-    // Sorted via a packed long[] key ((pageId << 32) | drawIndex) so page0 pins
-    // proceed in ascending pageId order without boxed-object comparator overhead.
+    // Draws as parallel primitive arrays, sorted via a packed long key ((pageId << 32) | drawIndex) so the
+    // page0 pins go in ascending pageId order without a boxed comparator.
     private final double[] drawAcceptanceSamples;
-    private final int[] drawTupleStartSeeds;
     private final long[] drawSortKeys;
-    private final LeafDraw leafDrawView;
     private int pendingLeafDrawIndex;
-    private final int leafDrawBatchSize;
+
+    // A page group's candidate slots, packed (tupleIndex << 32) | drawOrdinal: one primitive sort then orders
+    // them ascending by slot for the forward-only PK pass, while still saying which draw each slot came from
+    // (the per-draw give-up accounting needs that).
+    private long[] groupCandidates;
+    // Did this draw of the current group collect anything? Drives the give-up counter.
+    private final boolean[] drawCollectedAny;
+    private final int drawBatchCapacity;
+    // Every draw of a batch is consumed before the next refill; see refillLeafDrawBatch.
+    private int currentBatchSize;
 
     // search predicate
     private final ILSMIndexBatchPointCursor searchCursor;
@@ -128,15 +120,25 @@ public class ColumnBtreeSampleCursor extends EnforcedIndexCursor implements ITre
     // Static upper bound for rejection sampling
     private final int leafTupleCapacity;
 
-    // Cached once: the per-draw / per-yield System.nanoTime() timing is consumed
-    // only by the trace log in doClose(). Gating on this flag removes those
-    // syscall-class calls from the hot path when trace logging is disabled.
+    // Cached so the per-draw System.nanoTime() calls leave the hot path when trace logging is off; the only
+    // consumer is doClose()'s trace line.
     private final boolean traceTimingEnabled;
 
-    // Debug and traceability
     private long totalTimeTakenToFindRandomLeaf = 0;
     private long totalTimeTakenToFindRandomTuples = 0;
     private boolean endedPreemptively = false;
+
+    // Null in production scans (zero overhead); attached by the perf harness.
+    private SampleCursorStats stats;
+
+    public void setStats(SampleCursorStats stats) {
+        this.stats = stats;
+    }
+
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.GENERATED, notes = "Cost-breakdown stats accessor")
+    public SampleCursorStats getStats() {
+        return stats;
+    }
 
     private ICachedPage page0 = null;
     private int rootPageId;
@@ -157,7 +159,7 @@ public class ColumnBtreeSampleCursor extends EnforcedIndexCursor implements ITre
     public ColumnBtreeSampleCursor(ColumnBTree columnBTree, ColumnBTreeReadLeafFrame leafFrame,
             BTreeOpContext opContext, IColumnReadContext context, long componentSampleCardinality, long sampleSeed,
             int index, ILSMIndexBatchPointCursor searchCursor, int maxLeafFindingAttempts, int leafDrawBatchSize,
-            int maxLeafTupleCount, int samplesPerPage) {
+            int maxLeafTupleCount) {
         this.bTree = columnBTree;
         this.opCtx = opContext;
         this.leafFrame = leafFrame;
@@ -173,21 +175,23 @@ public class ColumnBtreeSampleCursor extends EnforcedIndexCursor implements ITre
         this.seenTupleIndexes = new LongOpenHashSet();
         this.totalAccessCount = 0;
         this.maxLeafFindingAttempts = maxLeafFindingAttempts;
-        this.samplesPerPage = Math.max(1, samplesPerPage);
-        // Collision probability ≈ samplesPerPage/tupleCount ≪ 1 for typical configs, so 5× is conservative.
-        this.maxPageSlotRetries = this.samplesPerPage * 5;
-        this.pageTupleCandidates = new int[this.maxPageSlotRetries];
         this.leafTupleCapacity = maxLeafTupleCount;
         this.traceTimingEnabled = LOGGER.isTraceEnabled();
 
-        this.leafDrawBatchSize = (int) Math.max(leafDrawBatchSize, componentSampleCardinality);
-        this.drawAcceptanceSamples = new double[this.leafDrawBatchSize];
-        this.drawTupleStartSeeds = new int[this.leafDrawBatchSize];
-        this.drawSortKeys = new long[this.leafDrawBatchSize];
-        this.leafDrawView = new LeafDraw(-1, 0.0, 0);
+        // A draw yields at most one sample, so a batch beyond the outstanding shortfall is waste, and it must
+        // be consumed whole (refillLeafDrawBatch). The configured size stays an upper bound -- an I/O-locality
+        // knob.
+        long capacity = leafDrawBatchSize > 0 ? Math.min(leafDrawBatchSize, componentSampleCardinality)
+                : componentSampleCardinality;
+        this.drawBatchCapacity = (int) Math.max(1, Math.min(Integer.MAX_VALUE, capacity));
+        this.drawAcceptanceSamples = new double[this.drawBatchCapacity];
+        this.drawSortKeys = new long[this.drawBatchCapacity];
+        this.drawCollectedAny = new boolean[this.drawBatchCapacity];
+        this.groupCandidates = new long[16];
 
-        // FIX: Force a batch refill on the very first nextLeafDraw() call
-        this.pendingLeafDrawIndex = this.leafDrawBatchSize;
+        // Force a batch refill on the very first draw.
+        this.pendingLeafDrawIndex = 0;
+        this.currentBatchSize = 0;
     }
 
     @Override
@@ -213,19 +217,23 @@ public class ColumnBtreeSampleCursor extends EnforcedIndexCursor implements ITre
 
         rootPageId = ((BTreeCursorInitialState) initialState).getPageId();
         leafPageIds = bTree.enumerateLeafPageIds(rootPageId, opCtx, context);
-        // Scale the give-up threshold to the component's tuple-population ceiling
-        // (leaf pages x max tuples/leaf), clamped to int to avoid an overflowed
-        // negative cap on huge components (where the target is far below the
-        // population and the loop exits on reaching the target regardless).
-        long populationCeiling = (long) leafPageIds.length * leafTupleCapacity;
-        effectiveMaxLeafFindingAttempts = (int) Math.min(Integer.MAX_VALUE,
-                Math.max(maxLeafFindingAttempts, POPULATION_ATTEMPT_MULTIPLIER * populationCeiling));
+        // Scale to the TARGET, not the tuple population: a bound of MULTIPLIER * leafPages * maxLeafTupleCount
+        // is ~32x total tuples, so an unreachable target ground through that many attempts however small the
+        // target was. Harmless on row, fatal on column -- a column attempt re-inits the PK decoders and walks
+        // the PK column, so the same count is milliseconds there and hours here. Target-scaling makes it
+        // O(target). The leafPages floor lets a tiny target still reach every page; the clamp stops the product
+        // overflowing negative.
+        long attemptCeiling = SAMPLE_ATTEMPT_MULTIPLIER * Math.max(leafPageIds.length, componentSampleCardinality);
+        effectiveMaxLeafFindingAttempts =
+                (int) Math.min(Integer.MAX_VALUE, Math.max(maxLeafFindingAttempts, attemptCeiling));
 
-        collectedSamples = new long[(int) componentSampleCardinality];
+        collectedSamples = new long[(int) Math.min(Integer.MAX_VALUE, componentSampleCardinality)];
         collectedCount = 0;
         selectionDone = false;
         yieldPos = 0;
         prevYieldPageId = -1;
+        pendingLeafDrawIndex = 0;
+        currentBatchSize = 0;
     }
 
     @Override
@@ -241,106 +249,187 @@ public class ColumnBtreeSampleCursor extends EnforcedIndexCursor implements ITre
     //  Phase 1: PK-only selection (Batched & Sorted for sequential I/O)
     // ──────────────────────────────────────────────────────────────────────
 
+    /**
+     * Collects up to {@code componentSampleCardinality} distinct live tuples.
+     * <p>
+     * <b>The result is an exactly uniform sample without replacement.</b> A draw picks a page uniformly
+     * ({@code 1/P}), accepts it with the Olken &amp; Rotem fill correction ({@code n/C}), then probes one of the
+     * page's {@code n} slots ({@code 1/n}). The product {@code 1/(P·C)} is free of {@code n}: cancelling the
+     * page's fill is the whole point of the Olken step, and dropping it would over-represent tuples on
+     * partly-filled pages.
+     * <p>
+     * Uniformity then rests on every stopping rule being a function of <b>counts only</b>, since such rules
+     * commute with relabelling the live tuples. Truncating a pageId-sorted batch is the one rule that is not —
+     * it keeps precisely the lowest pageIds — hence full-batch consumption ({@link #refillLeafDrawBatch()}).
+     * Page grouping is likewise safe because it only reorders probes: the RNG is consumed identically, and the
+     * result is order-insensitive (set-based dedup, sorted before phase 2, count-based stopping).
+     * <p>
+     * <b>Taking several slots per page visit would break this</b>, and was removed: the tuples of one visit
+     * share a page, so the sample becomes a cluster sample over contiguous stretches of the key space —
+     * measured chi-square well past its critical value — while the per-page amortization that once justified it
+     * is now unconditional, since a batch's same-page draws share one primary-key pass regardless.
+     * <p>
+     * One caveat: a component without {@code maxLeafTupleCount} metadata ({@code leafTupleCapacity == 0}) cannot
+     * be fill-corrected, which re-weights tuples by {@code 1/n}.
+     * <p>
+     * The attempts cap is tested only at batch boundaries, so it can overshoot by one batch — count-based
+     * either way, so bounded extra work and no effect on uniformity.
+     */
     private void runPhase1Selection() throws HyracksDataException {
-        while (collectedCount < componentSampleCardinality && hasNextAttemptCount < effectiveMaxLeafFindingAttempts) {
-            LeafDraw leafDraw = nextLeafDraw();
-            if (leafDraw == null) {
-                break;
+        while (true) {
+            if (pendingLeafDrawIndex >= currentBatchSize) {
+                // The ONLY legal stopping point: mid-batch would keep just the sorted batch's low-pageId
+                // prefix, a spatial filter rather than a sample.
+                if (hasNextAttemptCount >= effectiveMaxLeafFindingAttempts) {
+                    break;
+                }
+                refillLeafDrawBatch();
+                if (currentBatchSize == 0) {
+                    // Target reached, or the component has no leaf pages.
+                    break;
+                }
             }
-
-            totalAccessCount++;
-
-            int selectedPageId = pinAndAcceptLeafPage0(leafDraw);
-            if (selectedPageId == -1) {
-                hasNextAttemptCount++;
-                continue;
-            }
-
-            int collectedFromPage = collectFromPage(selectedPageId);
-
-            if (collectedFromPage > 0) {
-                hasNextAttemptCount = 0;
-            } else {
-                hasNextAttemptCount++;
-            }
+            visitNextPageGroup();
         }
 
         endedPreemptively = (collectedCount < componentSampleCardinality);
         unpinCurrentPage0();
 
-        // Sort by pageId (high 32 bits) then tupleIndex (low 32 bits) for Phase 2
+        // pageId (high 32) then tupleIndex (low 32), so phase 2 loads each page's columns once.
         Arrays.sort(collectedSamples, 0, collectedCount);
 
         if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("ColumnBtreeSampleCursor Phase 1: collected {} samples from {} leaf pages", collectedCount,
-                    leafPageIds.length);
+            // endedPreemptively with attempts == cap means the target was unreachable (near-exhaustive or
+            // over-estimated); attempts well below cap means it was met.
+            LOGGER.debug(
+                    "ColumnBtreeSampleCursor Phase 1: collected {}/{} samples from {} leaf pages, "
+                            + "attempts {}/{}, endedPreemptively {}",
+                    collectedCount, componentSampleCardinality, leafPageIds.length, hasNextAttemptCount,
+                    effectiveMaxLeafFindingAttempts, endedPreemptively);
         }
     }
 
-    private LeafDraw nextLeafDraw() {
-        if (pendingLeafDrawIndex >= leafDrawBatchSize) {
-            refillLeafDrawBatch();
-            if (leafPageIds == null || leafPageIds.length == 0) {
-                return null;
+    /**
+     * Consumes one <b>page group</b> — the maximal run of same-pageId draws, contiguous because the batch is
+     * pageId-sorted — with a single page0 pin, rewind and forward PK pass, instead of one per draw.
+     * <p>
+     * Two invariants keep this a pure reordering rather than a different sampling design
+     * ({@link #runPhase1Selection()}): a group never crosses a batch boundary and is always consumed whole, so
+     * the legal stopping points are unchanged; and the RNG is consumed in the same order and quantity, since
+     * draws are visited in ascending draw index and only accepted ones pull slots.
+     * <p>
+     * Per-draw give-up accounting is replayed after the pass rather than interleaved. Equivalent, because
+     * nothing between a group's first and last draw reads {@link #hasNextAttemptCount} — it is tested only at a
+     * batch boundary.
+     */
+    private void visitNextPageGroup() throws HyracksDataException {
+        int groupStart = pendingLeafDrawIndex;
+        // High 32 bits of the sort key ARE the pageId; the low 32 index back into the unsorted side arrays.
+        int pageId = (int) (drawSortKeys[groupStart] >>> 32);
+        int groupEnd = groupStart + 1;
+        while (groupEnd < currentBatchSize && (int) (drawSortKeys[groupEnd] >>> 32) == pageId) {
+            groupEnd++;
+        }
+        pendingLeafDrawIndex = groupEnd;
+        int groupSize = groupEnd - groupStart;
+        totalAccessCount += groupSize;
+        if (stats != null) {
+            stats.pageGroups++;
+        }
+
+        Arrays.fill(drawCollectedAny, 0, groupSize, false);
+        int tupleCount = pinLeafPage0(pageId);
+        if (tupleCount == 0) {
+            // An empty page rejects every draw that landed on it.
+            if (stats != null) {
+                stats.attempts += groupSize;
+                stats.pagesRejected += groupSize;
+            }
+        } else {
+            int candidateCount = drawGroupCandidates(groupStart, groupEnd, tupleCount);
+            if (candidateCount > 0) {
+                // Ascending by slot (then by draw ordinal), so the forward-only decoders never rewind.
+                Arrays.sort(groupCandidates, 0, candidateCount);
+                probeGroupCandidates(pageId, candidateCount);
+            } else {
+                // No draw survived fill-rejection: nothing to probe, so do not hold the page.
+                unpinCurrentPage0();
             }
         }
-        // Sort key packs (pageId << 32 | drawIndex): high 32 bits ARE the pageId (no separate array),
-        // low 32 bits index back into the unsorted SoA side arrays.
-        long sortKey = drawSortKeys[pendingLeafDrawIndex++];
-        int drawIndex = (int) sortKey;
-        leafDrawView.pageId = (int) (sortKey >>> 32);
-        leafDrawView.acceptanceSample = drawAcceptanceSamples[drawIndex];
-        leafDrawView.tupleStartSeed = drawTupleStartSeeds[drawIndex];
-        return leafDrawView;
+
+        for (int drawOrdinal = 0; drawOrdinal < groupSize; drawOrdinal++) {
+            if (drawCollectedAny[drawOrdinal]) {
+                hasNextAttemptCount = 0;
+            } else {
+                hasNextAttemptCount++;
+            }
+        }
     }
 
+    /**
+     * Draws the next batch of leaf-page visits, pageId-sorted so the page0 pins go in ascending order.
+     * <p>
+     * <b>The batch is sized to the outstanding shortfall so it can be consumed whole.</b> Sorting is only a
+     * permutation, and a permutation changes nothing — <em>provided every draw is consumed</em>. Truncating a
+     * pageId-sorted batch keeps precisely the lowest pageIds, turning the sort into a spatial filter; a fixed
+     * 32768-draw batch guaranteed that, since the target was met within a short prefix. At {@code remaining}
+     * draws the target can only be reached on the last one, because a draw yields at most one sample — so the
+     * caller can consume all of it. Total draws are unchanged; only the sort windows shrink.
+     * <p>
+     * The configured {@code leafDrawBatchSize} therefore no longer binds unless set below the target. It is kept
+     * as the ceiling on the draw-buffer allocation, and a smaller batch is still consumed whole, so it can only
+     * change pin locality, never which tuples are sampled.
+     * <p>
+     * Sets {@link #currentBatchSize} to 0 when nothing more is needed (target met) or possible (no leaf pages).
+     */
     private void refillLeafDrawBatch() {
         pendingLeafDrawIndex = 0;
-        if (leafPageIds == null || leafPageIds.length == 0 || leafDrawBatchSize <= 0) {
+        currentBatchSize = 0;
+        if (leafPageIds == null || leafPageIds.length == 0) {
             return;
         }
-        for (int i = 0; i < leafDrawBatchSize; i++) {
+        long remaining = componentSampleCardinality - collectedCount;
+        if (remaining <= 0) {
+            return;
+        }
+        int batchSize = (int) Math.min(drawBatchCapacity, remaining);
+        for (int i = 0; i < batchSize; i++) {
             int randomLeafIndex = randomNumGen.nextInt(leafPageIds.length);
             int targetPageId = leafPageIds[randomLeafIndex];
             drawAcceptanceSamples[i] = randomNumGen.nextDouble();
-            drawTupleStartSeeds[i] = randomNumGen.nextInt();
             drawSortKeys[i] = (((long) targetPageId) << 32) | (i & 0xffffffffL);
         }
-        // Sorting Phase 1 draws dramatically reduces random disk seeks for page0.
-        // Primitive long[] sort avoids the boxed-object comparator dispatch.
-        Arrays.sort(drawSortKeys);
+        // Cuts random page0 seeks; primitive sort avoids boxed comparator dispatch.
+        Arrays.sort(drawSortKeys, 0, batchSize);
+        currentBatchSize = batchSize;
     }
 
-    private int pinAndAcceptLeafPage0(LeafDraw leafDraw) throws HyracksDataException {
+    /**
+     * Pins the group's page0 (reusing the pin if it is already the one we hold) and returns its tuple count, or
+     * {@code 0} — having released the page — when the page holds no tuples.
+     * <p>
+     * The Olken &amp; Rotem fill test is not here: it is per draw, not per page, so it lives in
+     * {@link #drawGroupCandidates(int, int, int)}. Splitting it out is what lets one pin serve a whole group.
+     */
+    private int pinLeafPage0(int pageId) throws HyracksDataException {
         long nanos = traceTimingEnabled ? System.nanoTime() : 0L;
         try {
-            // Unpin previous page0 if we are moving to a new page
-            if (page0 != null && prevYieldPageId != leafDraw.pageId) {
+            if (page0 != null && prevYieldPageId != pageId) {
                 unpinCurrentPage0();
             }
 
             if (page0 == null) {
-                ICachedPage randomLeafPage =
-                        bufferCache.pin(BufferedFileHandle.getDiskPageId(fileId, leafDraw.pageId), context);
+                ICachedPage randomLeafPage = bufferCache.pin(BufferedFileHandle.getDiskPageId(fileId, pageId), context);
                 leafFrame.setPage(randomLeafPage);
                 page0 = leafFrame.getPage();
-                prevYieldPageId = leafDraw.pageId;
+                prevYieldPageId = pageId;
             }
 
             int tupleCount = leafFrame.getTupleCount();
             if (tupleCount == 0) {
                 unpinCurrentPage0();
-                return -1;
             }
-
-            // Rejection sampling against static capacity
-            double acceptProb = (double) tupleCount / leafTupleCapacity;
-            if (leafDraw.acceptanceSample >= acceptProb) {
-                unpinCurrentPage0();
-                return -1;
-            }
-
-            return leafDraw.pageId;
+            return tupleCount;
         } finally {
             if (traceTimingEnabled) {
                 totalTimeTakenToFindRandomLeaf += (System.nanoTime() - nanos);
@@ -349,73 +438,133 @@ public class ColumnBtreeSampleCursor extends EnforcedIndexCursor implements ITre
     }
 
     /**
-     * Collects up to {@code samplesPerPage} live tuples from one accepted page using a single
-     * forward-only pass over the PK level decoders.
+     * Applies the fill-proportional (Olken &amp; Rotem) acceptance test to each draw of the group and gives every
+     * survivor one candidate slot, packed into {@link #groupCandidates} as {@code (tupleIndex << 32) | drawOrdinal}.
      * <p>
-     * The PK definition-level decoder is sequential and cannot seek backwards, so we pre-draw the
-     * candidate tuple indices, sort them ascending, and probe them in order via
-     * {@link AbstractColumnTupleReference#seekForwardPKOnly(int)}. This scans the page once
-     * ({@code O(maxIndex)} level reads) instead of rewinding the decoder per probe. Antimatter,
-     * collision and newer-component rejections simply advance the forward scan.
+     * One slot per draw is what makes a tuple's per-draw probe probability {@code 1 / tupleCount}, cancelling the
+     * page's fill against the Olken acceptance probability ({@link #runPhase1Selection()}). Distinct draws are
+     * independent trials and may pick the same slot.
+     * <p>
+     * <b>Every candidate is probed</b> — the intra-page form of the full-batch rule. Candidates are
+     * slot-ascending, so stopping at the first acceptable one would select the <em>minimum</em> of several
+     * uniform draws and pull every page towards its low slots.
      *
-     * @return the number of live tuples collected from this page
+     * @return the number of candidate slots written to {@link #groupCandidates}
      */
-    private int collectFromPage(int selectedPageId) throws HyracksDataException {
-        long nanos = traceTimingEnabled ? System.nanoTime() : 0L;
-        try {
-            int tupleCount = leafFrame.getTupleCount();
-            int drawCount = Math.min(maxPageSlotRetries, tupleCount);
+    private int drawGroupCandidates(int groupStart, int groupEnd, int tupleCount) {
+        ensureGroupCandidateCapacity(groupEnd - groupStart);
+        // Unknown capacity (pre-upgrade component, no metadata) => accept every page. Mirrors
+        // DiskBTreeSampleCursor#pinAndAcceptLeafPage.
+        boolean applyFillRejection = leafTupleCapacity > 0;
+        double acceptProb = applyFillRejection ? (double) tupleCount / leafTupleCapacity : 1.0;
 
-            // Pre-draw candidate tuple indices and sort ascending for a monotonic forward scan.
-            for (int i = 0; i < drawCount; i++) {
-                pageTupleCandidates[i] = randomNumGen.nextInt(tupleCount);
-            }
-            Arrays.sort(pageTupleCandidates, 0, drawCount);
-
-            // Rewind the PK level decoders once for this page; subsequent seeks move forward only.
-            columnTupleRef.startSamplingPage();
-
-            int collectedFromPage = 0;
-            int prevTupleIndex = -1;
-            for (int c = 0; c < drawCount && collectedFromPage < samplesPerPage
-                    && collectedCount < componentSampleCardinality; c++) {
-                int tupleIndex = pageTupleCandidates[c];
-                if (tupleIndex == prevTupleIndex) {
-                    // Duplicate draw within the sorted batch; the decoder cannot revisit it anyway.
-                    continue;
+        int candidateCount = 0;
+        // Ascending draw index: the order the sorted batch would have visited these anyway.
+        for (int i = groupStart; i < groupEnd; i++) {
+            int drawIndex = (int) drawSortKeys[i];
+            if (applyFillRejection && drawAcceptanceSamples[drawIndex] >= acceptProb) {
+                if (stats != null) {
+                    stats.attempts++;
+                    stats.pagesRejected++;
                 }
-                prevTupleIndex = tupleIndex;
+                continue;
+            }
+            if (stats != null) {
+                stats.attempts++;
+                stats.pagesAccepted++;
+            }
+            int drawOrdinal = i - groupStart;
+            groupCandidates[candidateCount++] =
+                    (((long) randomNumGen.nextInt(tupleCount)) << 32) | (drawOrdinal & 0xffffffffL);
+        }
+        return candidateCount;
+    }
 
-                columnTupleRef.seekForwardPKOnly(tupleIndex);
+    /**
+     * Probes the group's slot-ascending candidates in one forward-only pass, collecting the live ones.
+     * <p>
+     * The PK definition-level decoder is sequential and cannot seek backwards — hence the ascending order and
+     * the single {@link AbstractColumnTupleReference#startSamplingPage()} rewind. One
+     * {@code O(maxCandidateIndex)} scan serves the whole group. Rejections just advance the scan.
+     * <p>
+     * <b>Repeated slots must not be re-seeked.</b> Two draws may pick the same slot, and
+     * {@link AbstractColumnTupleReference#seekForwardPKOnly(int)} computes {@code startIndex - tupleIndex - 1},
+     * so a repeat would pass a skip of {@code -1} and desync the decoder. The reader is already there, so the
+     * repeat just re-runs the liveness decision.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "PK-seek and liveness timing, non-overlapping")
+    private void probeGroupCandidates(int pageId, int candidateCount) throws HyracksDataException {
+        long nanos = (traceTimingEnabled || stats != null) ? System.nanoTime() : 0L;
+        // Subtracted from the method-wide window before it lands in stats.pkSeekNanos: the liveness check runs
+        // inside this timed span, so without this pkSeekNanos would contain it and dilute livenessSharePct().
+        long livenessNanosThisCall = 0L;
+        try {
+            columnTupleRef.startSamplingPage();
+            int lastProbedIndex = -1;
+
+            // Every candidate is probed: stopping early biases towards low slots (drawGroupCandidates).
+            for (int c = 0; c < candidateCount; c++) {
+                long packed = groupCandidates[c];
+                int tupleIndex = (int) (packed >>> 32);
+                int drawOrdinal = (int) packed;
+
+                if (tupleIndex != lastProbedIndex) {
+                    columnTupleRef.seekForwardPKOnly(tupleIndex);
+                    lastProbedIndex = tupleIndex;
+                }
+                if (stats != null) {
+                    stats.pkSeekCalls++;
+                }
                 if (frameTuple.isAntimatter()) {
                     continue;
                 }
 
-                long pageTupleKey = getPageTupleKey(selectedPageId, tupleIndex);
+                long pageTupleKey = getPageTupleKey(pageId, tupleIndex);
                 if (seenTupleIndexes.contains(pageTupleKey)) {
                     continue;
                 }
 
-                // Newer-component check (uses PK fields from page0)
+                // Newer-component liveness, from page0's PK fields alone.
                 searchKeys.clear();
                 foundIndexes.clear();
                 searchKeys.add(frameTuple);
                 batchPredicate.reset(searchKeys);
                 searchCursor.setPredicate(batchPredicate);
+                long livenessStart = stats != null ? System.nanoTime() : 0L;
                 searchCursor.hasNextWithPredicate(foundIndexes);
+                if (stats != null) {
+                    long livenessElapsed = System.nanoTime() - livenessStart;
+                    stats.livenessNanos += livenessElapsed;
+                    livenessNanosThisCall += livenessElapsed;
+                    stats.livenessCalls++;
+                    stats.livenessKeys++;
+                }
                 if (!foundIndexes.isEmpty()) {
                     continue;
                 }
 
                 seenTupleIndexes.add(pageTupleKey);
                 collectedSamples[collectedCount++] = pageTupleKey;
-                collectedFromPage++;
+                drawCollectedAny[drawOrdinal] = true;
             }
-            return collectedFromPage;
         } finally {
             if (traceTimingEnabled) {
                 totalTimeTakenToFindRandomTuples += (System.nanoTime() - nanos);
             }
+            if (stats != null) {
+                stats.pkSeekNanos += System.nanoTime() - nanos - livenessNanosThisCall;
+            }
+        }
+    }
+
+    /**
+     * Grows {@link #groupCandidates}. One slot per draw and a group cannot exceed the batch capacity, so this
+     * settles after the first few groups rather than growing without limit.
+     */
+    private void ensureGroupCandidateCapacity(long needed) {
+        if (groupCandidates.length < needed) {
+            long grown = Math.max(needed, groupCandidates.length * 2L);
+            groupCandidates = new long[(int) Math.min(Integer.MAX_VALUE, grown)];
         }
     }
 
@@ -423,37 +572,32 @@ public class ColumnBtreeSampleCursor extends EnforcedIndexCursor implements ITre
     //  Phase 2: Sorted column collection — one mega-page load per page
     // ──────────────────────────────────────────────────────────────────────
 
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "Release the final mega-leaf's pages when Phase 2 is exhausted instead of holding them "
-            + "until doClose()")
     private boolean yieldNextFromPhase2() throws HyracksDataException {
         if (yieldPos >= collectedCount) {
-            /*
-             * Phase 2 releases a mega-leaf's pages only when the page id changes, so when the samples run out
-             * the last page's column set is still pinned. Release it here rather than holding a full mega-leaf
-             * of frames until doClose(). releasePages() is idempotent: context.release/unpinAll and
-             * unpinColumnsPages clear their page lists, and unpinCurrentPage0 no-ops on a null page0.
-             */
+            // Pages are released on page-id change, so the last mega-leaf is still pinned here. Release it
+            // rather than hold a full mega-leaf of frames until doClose(). releasePages() is idempotent.
             releasePages();
             return false;
         }
 
-        long nanos = traceTimingEnabled ? System.nanoTime() : 0L;
+        long nanos = (traceTimingEnabled || stats != null) ? System.nanoTime() : 0L;
         try {
             long packed = collectedSamples[yieldPos];
             int pageId = (int) (packed >>> 32);
             int tupleIdx = (int) packed;
 
             if (pageId != prevYieldPageId) {
-                // Release previous column pages & page0
                 context.release(bufferCache);
                 unpinCurrentPage0();
 
-                // Pin the new page0
                 ICachedPage newPage = bufferCache.pin(BufferedFileHandle.getDiskPageId(fileId, pageId), context);
+                if (stats != null) {
+                    stats.phase2PagePins++;
+                }
                 leafFrame.setPage(newPage);
                 page0 = leafFrame.getPage();
 
-                // Full column load
+                // Full column load -- the point of deferring to phase 2.
                 context.preparePageZeroSegments(leafFrame, bufferCache, fileId);
                 frameTuple.newPage();
                 context.prepareColumns(leafFrame, bufferCache, fileId);
@@ -467,9 +611,11 @@ public class ColumnBtreeSampleCursor extends EnforcedIndexCursor implements ITre
             yieldPos++;
             return true;
         } finally {
-            // Track Phase 2 materialization time here
             if (traceTimingEnabled) {
                 totalTimeTakenToFindRandomTuples += (System.nanoTime() - nanos);
+            }
+            if (stats != null) {
+                stats.phase2Nanos += System.nanoTime() - nanos;
             }
         }
     }
@@ -524,8 +670,9 @@ public class ColumnBtreeSampleCursor extends EnforcedIndexCursor implements ITre
         yieldPos = 0;
         prevYieldPageId = -1;
 
-        // FIX: Force a batch refill on the next reuse
-        pendingLeafDrawIndex = leafDrawBatchSize;
+        // Force a batch refill on the next reuse
+        pendingLeafDrawIndex = 0;
+        currentBatchSize = 0;
 
         sampledCount = 0;
         hasNextAttemptCount = 0;
@@ -546,13 +693,10 @@ public class ColumnBtreeSampleCursor extends EnforcedIndexCursor implements ITre
     }
 
     @Override
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "Pass read context on unpin so onUnpin/afterRead releases the read latch acquired by pin (fixes cloud isClean leak)")
     public void unpin(ICachedPage page) throws HyracksDataException {
-        // Must pass the same read context used in pin(int): pin() goes through
-        // context.onPin -> CloudCachedPage.beforeRead (read latch), so unpin must go
-        // through context.onUnpin -> afterRead to release that latch. Unpinning without
-        // the context skips onUnpin and leaks the read latch (fails BufferCache.isClean
-        // under cloud storage).
+        // Same context as pin(int): pin goes through context.onPin -> beforeRead (read latch), so unpin must go
+        // through onUnpin -> afterRead to release it. Without the context the latch leaks and cloud storage
+        // fails BufferCache.isClean.
         bufferCache.unpin(page, context);
     }
 
@@ -561,16 +705,4 @@ public class ColumnBtreeSampleCursor extends EnforcedIndexCursor implements ITre
         return bufferCache.getPageSize();
     }
 
-    // Mutable single-instance view over the SoA draw arrays, repointed per draw.
-    private static final class LeafDraw {
-        private int pageId;
-        private double acceptanceSample;
-        private int tupleStartSeed;
-
-        private LeafDraw(int pageId, double acceptanceSample, int tupleStartSeed) {
-            this.pageId = pageId;
-            this.acceptanceSample = acceptanceSample;
-            this.tupleStartSeed = tupleStartSeed;
-        }
-    }
 }

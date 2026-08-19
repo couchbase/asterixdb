@@ -250,7 +250,11 @@ public class LSMBTree extends AbstractLSMIndex implements ITreeIndex {
     }
 
     public LSMIndexSampleCursor createSampleCollectorCursor(ILSMIndexOperationContext opContext) {
-        return new LSMIndexSampleCursor(opContext);
+        return new LSMIndexSampleCursor(opContext, createSampleLivenessSearchCursor(opContext));
+    }
+
+    public LSMBTreeBatchPointSearchCursor createSampleLivenessSearchCursor(ILSMIndexOperationContext opCtx) {
+        return new LSMBTreeBatchPointSearchCursor(opCtx);
     }
 
     @Override

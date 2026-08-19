@@ -53,7 +53,6 @@ public class LSMIndexSampleCursor extends EnforcedIndexCursor implements ILSMInd
     public static final String SAMPLE_SEED = "SAMPLE_SEED";
     public static final String SAMPLE_MAX_LEAF_ATTEMPTS = "SAMPLE_MAX_LEAF_ATTEMPTS";
     public static final String SAMPLE_LEAF_DRAW_BATCH_SIZE = "SAMPLE_LEAF_DRAW_BATCH_SIZE";
-    public static final String SAMPLE_COLUMN_SAMPLES_PER_PAGE = "SAMPLE_COLUMN_SAMPLES_PER_PAGE";
     private static final Logger LOGGER = LogManager.getLogger();
     // The theta sketch may have been written across multiple metadata pages; read it back via the chunking reader.
     private static final ChunkedComponentMetadataReaderWriter THETA_SKETCH_RW =
@@ -77,7 +76,6 @@ public class LSMIndexSampleCursor extends EnforcedIndexCursor implements ILSMInd
     private final long sampleSeed;
     private int maxSampleLeafAttempts;
     private int sampleLeafDrawBatchSize;
-    private int columnSamplesPerPage;
     // Number of LIVE tuples sampled so far.
     private int sampledCount;
     private int currentDiskComponentIndex;
@@ -108,7 +106,6 @@ public class LSMIndexSampleCursor extends EnforcedIndexCursor implements ILSMInd
         // Read sampling knobs passed via the access parameters (sourced from StorageProperties at job build time).
         maxSampleLeafAttempts = (int) opCtx.getParameters().get(SAMPLE_MAX_LEAF_ATTEMPTS);
         sampleLeafDrawBatchSize = (int) opCtx.getParameters().get(SAMPLE_LEAF_DRAW_BATCH_SIZE);
-        columnSamplesPerPage = (int) opCtx.getParameters().get(SAMPLE_COLUMN_SAMPLES_PER_PAGE);
 
         // Reset state from any previous scan
         sampledCount = 0;
@@ -164,7 +161,7 @@ public class LSMIndexSampleCursor extends EnforcedIndexCursor implements ILSMInd
     private ITreeIndexCursor createCursor(DiskBTree.DiskBTreeAccessor bTreeAccessor, long componentSampleCardinality,
             long sampleSeed, ILSMIndexBatchPointCursor searchCursor, int maxLeafTupleCount) {
         return bTreeAccessor.createSampleCursor(componentSampleCardinality, sampleSeed, searchCursor,
-                maxSampleLeafAttempts, sampleLeafDrawBatchSize, maxLeafTupleCount, columnSamplesPerPage,
+                maxSampleLeafAttempts, sampleLeafDrawBatchSize, maxLeafTupleCount,
                 AntimatterAwareTupleAcceptor.INSTANCE);
     }
 
