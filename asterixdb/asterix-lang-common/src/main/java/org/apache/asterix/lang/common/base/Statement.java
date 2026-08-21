@@ -127,7 +127,9 @@ public interface Statement extends ILangExpression {
         CATALOG_CREATE("CATALOG CREATE", false),
         CATALOG_DROP("CATALOG DROP", false),
         CRS_CREATE("CRS_CREATE", false),
-        CRS_DROP("CRS_DROP", false);
+        CRS_DROP("CRS_DROP", false),
+        EXPLAIN("EXPLAIN", false),
+        ADVISE("ADVISE", false);
 
         private final String displayName;
         private final boolean isSupportAsync;

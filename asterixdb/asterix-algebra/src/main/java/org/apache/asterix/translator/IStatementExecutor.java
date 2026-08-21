@@ -110,6 +110,19 @@ public interface IStatementExecutor {
         }
     }
 
+    /**
+     * EXPLAIN and ADVISE are flags the parser sets on a query rather than kinds of their own, so a statement that only
+     * explains its plan is a {@link Statement.Kind#QUERY} like any other. Whatever reports a statement has to ask.
+     */
+    static boolean isExplainQuery(Statement stmt) {
+        return stmt.getKind() == Statement.Kind.QUERY && ((Query) stmt).isExplain();
+    }
+
+    /** Whether this statement is a query that only advises on indexes; see {@link #isExplainQuery(Statement)}. */
+    static boolean isAdviseQuery(Statement stmt) {
+        return stmt.getKind() == Statement.Kind.QUERY && ((Query) stmt).isAdvise();
+    }
+
     /** What one statement produced. Filled in on the CC, carried to the NC on the request's result metadata. */
     class StatementInfo implements Serializable {
         private static final long serialVersionUID = 1L;
@@ -125,6 +138,8 @@ public interface IStatementExecutor {
         private String text;
         private Stats stats;
         private Throwable error;
+        private boolean explain;
+        private boolean advise;
         private final List<Warning> warnings = new ArrayList<>();
 
         public StatementInfo(int position, Statement.Kind kind, String name) {
@@ -143,6 +158,20 @@ public interface IStatementExecutor {
 
         public String getName() {
             return name;
+        }
+
+        public boolean isExplain() {
+            return explain;
+        }
+
+        public boolean isAdvise() {
+            return advise;
+        }
+
+        /** Records whether this statement only explains or advises, which its kind does not say. */
+        public void setQueryFlags(Statement stmt) {
+            this.explain = isExplainQuery(stmt);
+            this.advise = isAdviseQuery(stmt);
         }
 
         public String getText() {
@@ -470,6 +499,8 @@ public interface IStatementExecutor {
 
         private Statement.Kind kind;
         private String name;
+        private boolean explain;
+        private boolean advise;
 
         public Statement.Kind getKind() {
             return kind;
@@ -485,6 +516,24 @@ public interface IStatementExecutor {
 
         public void setName(String name) {
             this.name = name;
+        }
+
+        public boolean isExplain() {
+            return explain;
+        }
+
+        public boolean isAdvise() {
+            return advise;
+        }
+
+        /** Records whether this statement only explains or advises, which its kind does not say. */
+        public void setQueryFlags(Statement stmt) {
+            setQueryFlags(isExplainQuery(stmt), isAdviseQuery(stmt));
+        }
+
+        public void setQueryFlags(boolean explain, boolean advise) {
+            this.explain = explain;
+            this.advise = advise;
         }
 
         public boolean isValid() {

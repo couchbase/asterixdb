@@ -439,6 +439,7 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
                 rewriteStatement(stmt, stmtRewriter, metadataProvider); // Rewrite the statement's AST.
                 Statement.Kind kind = stmt.getKind();
                 statementProperties.setKind(kind);
+                statementProperties.setQueryFlags(stmt);
                 boolean synthetic = stmt == syntheticStatement;
                 if (!synthetic) {
                     statementPosition++;
@@ -699,6 +700,7 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
         }
         String name = stmt.getKind() == Statement.Kind.EXTENSION ? ((ExtensionStatement) stmt).getName() : null;
         StatementInfo statementInfo = new StatementInfo(position, stmt.getKind(), name);
+        statementInfo.setQueryFlags(stmt);
         outMetadata.getStatements().add(statementInfo);
         // kept so that endStatement can tell this statement's plans apart and put the request's back
         plansBeforeStatement = new ExecutionPlans(apiFramework.getExecutionPlans());
