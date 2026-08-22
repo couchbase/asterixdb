@@ -34,6 +34,7 @@ import org.apache.asterix.metadata.declared.MetadataProvider;
 import org.apache.asterix.metadata.entities.Catalog;
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
 import org.apache.hyracks.api.exceptions.SourceLocation;
+import org.apache.hyracks.util.annotations.AiProvenance;
 
 public class IcebergStatementValidationHelper {
 
@@ -47,6 +48,7 @@ public class IcebergStatementValidationHelper {
                 adapter);
     }
 
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "Reject a collection that sets the catalog-level vending property itself")
     public static void validateIfIcebergTable(ICcApplicationContext appCtx, MetadataProvider metadataProvider,
             MetadataTransactionContext mdTxnCtx, Map<String, String> properties, Map<String, String> extraProperties,
             SourceLocation srcLoc, String adapter) throws AlgebricksException {
@@ -67,6 +69,8 @@ public class IcebergStatementValidationHelper {
 
         // validate snapshot exists if provided
         properties.putAll(extraProperties);
+        // a collection may not claim vending for itself; it is the catalog that enables it
+        IcebergUtils.validateVendedCredentialsNotSetOnCollection(properties, srcLoc);
         metadataProvider.addIcebergCatalogPropertiesIfNeeded(appCtx, properties);
         IcebergSnapshotUtils.validateSnapshotExists(properties);
     }

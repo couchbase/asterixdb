@@ -55,6 +55,7 @@ import org.apache.asterix.external.util.google.iceberg.fileio.GCSFileIO;
 import org.apache.asterix.external.util.iceberg.nessie.NessieUtils;
 import org.apache.asterix.external.util.iceberg.rest.RestUtils;
 import org.apache.asterix.om.types.ARecordType;
+import org.apache.hyracks.api.exceptions.SourceLocation;
 import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.Table;
@@ -99,11 +100,90 @@ public class IcebergUtils {
         return false;
     }
 
+    /**
+     * Whether credential vending is enabled on the catalog behind this configuration -- and therefore whether
+     * a collection of that catalog takes its storage credentials from it. Independent of the credentials used
+     * to reach the catalog itself.
+     *
+     * <p>Nothing is recorded on the collection: the catalog's properties are merged in afresh on every
+     * compilation, so the switch is simply read where it is needed. The setting appears unprefixed while the
+     * catalog's own properties are being validated, and prefixed once they have been merged into a
+     * collection, so both spellings are accepted.
+     *
+     * @param configuration catalog properties, or a collection configuration with them merged in
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.GENERATED, notes = "Reads the catalog-level vending switch in either property space")
+    public static boolean isVendedCredentials(Map<String, String> configuration) {
+        String prefixed = configuration.get(
+                ICEBERG_CATALOG_PROPERTY_PREFIX_INTERNAL + IcebergConstants.ICEBERG_VENDED_CREDENTIALS_PROPERTY_KEY);
+        return Boolean.parseBoolean(prefixed != null ? prefixed
+                : configuration.get(IcebergConstants.ICEBERG_VENDED_CREDENTIALS_PROPERTY_KEY));
+    }
+
+    /**
+     * Whether a catalog of the given source can be asked to vend credentials. This is a structural check
+     * only: credential vending is part of the Iceberg REST protocol, so a non-REST source can never offer it.
+     * Whether a given <em>endpoint</em> actually vends is a runtime property we cannot decide here, because
+     * the endpoint is supplied by the user -- {@code S3_TABLES} is the illustration. Its own endpoint
+     * ({@code s3tables.<region>.amazonaws.com}) never vends: it has no notion of Lake Formation and
+     * authorizes purely through {@code s3tables:*} IAM actions. The same tables reached through Glue
+     * ({@code glue.<region>.amazonaws.com}, warehouse {@code <account>:s3tablescatalog/<bucket>}) do vend,
+     * once the bucket is registered with {@code lakeformation register-resource --with-federation}. Both are
+     * legal here, so both are allowed, and a non-vending endpoint surfaces at scan time.
+     *
+     * @param catalogSource catalog source
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI,
+            contributionKind = AiProvenance.ContributionKind.GENERATED,
+            notes = "Identifies which catalog sources are REST-backed and can therefore vend credentials")
+    public static boolean supportsVendedCredentials(IcebergCatalogSource catalogSource) {
+        // kept exhaustive on purpose, so a newly added source has to make this choice explicitly
+        return switch (catalogSource) {
+            case REST, NESSIE_REST, AWS_GLUE_REST, S3_TABLES, BIGLAKE_METASTORE -> true;
+            case AWS_GLUE, NESSIE -> false;
+        };
+    }
+
+    /**
+     * Rejects a collection that sets the catalog's vending property itself. Vending is enabled on the catalog
+     * and inherited, so the property has no meaning here -- and silently ignoring it would let a user believe
+     * they had turned vending on.
+     *
+     * @param configuration collection properties, before the catalog's are merged in
+     * @param sourceLoc     location of the declaration, for error reporting
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.GENERATED, notes = "Rejects the catalog-level vending property when set on a collection")
+    public static void validateVendedCredentialsNotSetOnCollection(Map<String, String> configuration,
+            SourceLocation sourceLoc) throws CompilationException {
+        if (configuration.containsKey(IcebergConstants.ICEBERG_VENDED_CREDENTIALS_PROPERTY_KEY)) {
+            throw new CompilationException(ErrorCode.INVALID_PARAM, sourceLoc,
+                    IcebergConstants.ICEBERG_VENDED_CREDENTIALS_PROPERTY_KEY);
+        }
+    }
+
+    /**
+     * Rejects a catalog that enables vending on a source incapable of it. Checked where the claim is made
+     * rather than on the first collection to use it, so the error names the thing that is wrong.
+     *
+     * @param properties the catalog's own properties, unprefixed
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.GENERATED, notes = "Validates the catalog-level vending switch against the source's capability")
+    public static void validateVendedCredentialsCapability(Map<String, String> properties) throws CompilationException {
+        if (!isVendedCredentials(properties)) {
+            return;
+        }
+        String catalogSource = properties.get(IcebergConstants.ICEBERG_SOURCE_PROPERTY_KEY);
+        if (!supportsVendedCredentials(validateAndGetCatalogSource(catalogSource))) {
+            throw new CompilationException(ErrorCode.VENDED_CREDENTIALS_UNSUPPORTED_CATALOG_SOURCE, catalogSource);
+        }
+    }
+
     public static void validateCatalogProperties(Map<String, String> properties) throws CompilationException {
         validatePropertyExists(properties, IcebergConstants.ICEBERG_SOURCE_PROPERTY_KEY, ErrorCode.PARAMETERS_REQUIRED);
 
         String catalogSource = properties.get(IcebergConstants.ICEBERG_SOURCE_PROPERTY_KEY);
         validateAndGetCatalogSource(catalogSource);
+        validateVendedCredentialsCapability(properties);
         validateCatalogSpecificProperties(properties, catalogSource);
     }
 
@@ -243,6 +323,7 @@ public class IcebergUtils {
      * @param configuration configuration
      * @return catalog properties
      */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "Carry the vended-credentials marker through to the catalog properties so setFileIoProperties can see it")
     public static Map<String, String> filterCatalogProperties(Map<String, String> configuration) {
         Map<String, String> properties = new HashMap<>();
         String ioReader = configuration.get(ExternalDataConstants.KEY_EXTERNAL_SOURCE_TYPE);
@@ -258,6 +339,8 @@ public class IcebergUtils {
 
         // we only need reader type from collection properties (other than auth params) for setting FileIO later
         properties.put(IcebergConstants.ICEBERG_IO_READER_TYPE, ioReader);
+        // setFileIoProperties reads the vending switch from these properties; it arrives via the
+        // catalog-prefix branch above, so nothing further needs carrying across.
         return properties;
     }
 
@@ -332,6 +415,7 @@ public class IcebergUtils {
         try {
             catalog = createAndSetCatalogProperties(catalogProperties, catalogSource);
             setWarehouseIfPresent(catalogProperties);
+            setAccessDelegationIfVended(catalogProperties);
             if (initCatalogIo) {
                 setFileIoProperties(catalogProperties, catalogSource);
             }
@@ -466,10 +550,32 @@ public class IcebergUtils {
         }
     }
 
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "Skip FileIO configuration when the catalog vends the credentials")
+    /**
+     * Asks the catalog to vend storage credentials for the tables it hands out. Only the request side is ours:
+     * the credentials come back on the load-table response and the Iceberg client applies them to the table's
+     * FileIO itself, which is also why {@link #setFileIoProperties} must not configure one.
+     *
+     * @param catalogProperties catalog properties
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.GENERATED, notes = "Requests credential vending via the REST access-delegation header")
+    private static void setAccessDelegationIfVended(Map<String, String> catalogProperties) {
+        if (isVendedCredentials(catalogProperties)) {
+            catalogProperties.put(IcebergConstants.Rest.ACCESS_DELEGATION_HEADER_PROPERTY,
+                    IcebergConstants.Rest.ACCESS_DELEGATION_VENDED_CREDENTIALS);
+        }
+    }
+
     public static void setFileIoProperties(Map<String, String> catalogProperties, IcebergCatalogSource catalogSource)
             throws CompilationException {
         if (catalogSource == IcebergCatalogSource.NESSIE_REST) {
             // NESSIE_REST should not set any FileIO properties, it is provided by Nessie server
+            return;
+        }
+
+        if (isVendedCredentials(catalogProperties)) {
+            // the catalog vends the storage credentials and supplies the FileIO configuration along with them,
+            // so configuring one here would override what is vended
             return;
         }
 

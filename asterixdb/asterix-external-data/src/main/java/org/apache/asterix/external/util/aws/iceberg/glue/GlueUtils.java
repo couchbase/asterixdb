@@ -48,6 +48,7 @@ import org.apache.asterix.external.util.aws.AwsUtils.CloseableAwsClients;
 import org.apache.asterix.external.util.aws.iceberg.auth.EnsureCloseClientsRESTSigV4AuthManager;
 import org.apache.asterix.external.util.iceberg.IcebergConstants;
 import org.apache.asterix.external.util.iceberg.IcebergUtils;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.aws.glue.GlueCatalog;
 import org.apache.iceberg.rest.RESTCatalog;
@@ -93,13 +94,20 @@ public class GlueUtils {
         catalogProperties.put(CLIENT_FACTORY, EnsureCloseAWSClientFactory.class.getName());
     }
 
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "Leave the storage client factory unset when the catalog vends the credentials, so the "
+            + "vended ones are what the table's FileIO is built from")
     public static void setGlueRestCatalogProperties(Map<String, String> catalogProperties) throws CompilationException {
         catalogProperties.put(CATALOG_IMPL, RESTCatalog.class.getName());
         catalogProperties.put(URI, catalogProperties.get(ICEBERG_URI_PROPERTY_KEY));
+        // sigv4 reaches the catalog endpoint itself, so it stays ours whether or not credentials are vended
         catalogProperties.put(AUTH_TYPE, EnsureCloseClientsRESTSigV4AuthManager.class.getName());
         catalogProperties.put(REST_SIG4_SIGNING_NAME, getSigningName(catalogProperties));
         catalogProperties.put(REST_SIG4_SIGNING_REGION, catalogProperties.get(REST_SIG4_SIGNING_REGION_PROPERTY_NAME));
-        catalogProperties.put(CLIENT_FACTORY, EnsureCloseAWSClientFactory.class.getName());
+        if (!IcebergUtils.isVendedCredentials(catalogProperties)) {
+            // this factory builds the storage clients backing the table's FileIO from the collection's own
+            // credentials, which a vended-credentials collection does not have
+            catalogProperties.put(CLIENT_FACTORY, EnsureCloseAWSClientFactory.class.getName());
+        }
     }
 
     private static String getSigningName(Map<String, String> catalogProperties) throws CompilationException {

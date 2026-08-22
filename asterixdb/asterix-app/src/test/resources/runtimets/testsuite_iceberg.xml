@@ -145,6 +145,15 @@
       </compilation-unit>
     </test-case>
     <test-case FilePath="iceberg/negative">
+      <compilation-unit name="vended-credentials">
+        <output-dir compare="Text">vended-credentials</output-dir>
+        <!-- vending is part of the Iceberg REST protocol, so a catalog may only enable it on a REST source -->
+        <expected-error>ASX1262: Iceberg catalog source 'NESSIE' cannot vend credentials</expected-error>
+        <!-- the switch belongs to the catalog; a collection setting it is user error -->
+        <expected-error>ASX0050: Invalid parameter 'vendedCredentials'</expected-error>
+      </compilation-unit>
+    </test-case>
+    <test-case FilePath="iceberg/negative">
       <compilation-unit name="bad-source-type">
         <output-dir compare="Text">bad-source-type</output-dir>
         <expected-error>ASX1230: Unsupported Iceberg catalog source: 'FAKE_AWS_GLUE'</expected-error>
