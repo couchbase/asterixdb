@@ -22,6 +22,7 @@ import java.nio.ByteBuffer;
 
 import org.apache.asterix.common.exceptions.ErrorCode;
 import org.apache.asterix.common.exceptions.RuntimeDataException;
+import org.apache.asterix.common.vector.VectorSimilarityMetric;
 import org.apache.hyracks.api.comm.IFrameWriter;
 import org.apache.hyracks.api.comm.VSizeFrame;
 import org.apache.hyracks.api.context.IHyracksTaskContext;
@@ -49,8 +50,8 @@ import org.apache.hyracks.dataflow.std.misc.MaterializerTaskState;
 import org.apache.hyracks.util.annotations.AiProvenance;
 
 /**
- * CLUSTER BY k-means‖ Lloyd loop — the loop head: materialize this partition's vectors once, then run every
- * refinement iteration against them without leaving the operator.
+ * The Lloyd loop head: materializes this partition's vectors once, then runs every refinement iteration
+ * against them without leaving the operator.
  * <p>
  * An iteration is one assignment pass: each resident vector is charged to its nearest current centroid, and the
  * partition emits one {@code (count, sum)} partial per centroid that attracted anything. The reduce that turns
@@ -67,7 +68,7 @@ import org.apache.hyracks.util.annotations.AiProvenance;
  * set travel, both independent of the input size.
  */
 @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
-@AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "Declared dimension threaded to decoders; rejected initial centroids skip with a warning instead of failing")
+@AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
 public class KMeansLloydControllerOperatorDescriptor extends AbstractOperatorDescriptor {
     private static final long serialVersionUID = 1L;
 
@@ -88,10 +89,15 @@ public class KMeansLloydControllerOperatorDescriptor extends AbstractOperatorDes
     // The declared Dimension, enforced by the decoders (see KMeansVectorCodec.ListVectorDecoder).
     private final int dimension;
 
+    // The metric every distance in this stage is measured with. Validation refuses the metrics with no usable
+    // centroid update, so only ones the algorithm can converge under reach here.
+    private final VectorSimilarityMetric metric;
+
     public KMeansLloydControllerOperatorDescriptor(IOperatorDescriptorRegistry spec, RecordDescriptor centroidRecDesc,
             RecordDescriptor partialRecDesc, String loopKey, int vectorColumn, int centroidColumn, int iterations,
-            int numClusters, int framesLimit, int dimension) {
+            int numClusters, int framesLimit, int dimension, VectorSimilarityMetric metric) {
         super(spec, 2, 2);
+        this.metric = metric;
         this.loopKey = loopKey;
         this.vectorColumn = vectorColumn;
         this.centroidColumn = centroidColumn;
@@ -256,8 +262,8 @@ public class KMeansLloydControllerOperatorDescriptor extends AbstractOperatorDes
                             }
                             continue;
                         }
-                        // Streamed straight into the store rather than gathered first: buffering the seed set
-                        // here would put the O(k * dim) back on the heap that the store exists to keep off it.
+                        // Streamed straight into the store, since buffering the seed set here would put the
+                        // O(k * dim) back on the heap that the store exists to keep off it.
                         if (!building) {
                             control.getCentroids().beginPut(ctx);
                             building = true;
@@ -377,7 +383,7 @@ public class KMeansLloydControllerOperatorDescriptor extends AbstractOperatorDes
                             final int[] dimension = { 0 };
                             KMeansLoopIO.streamScoredAgainstPool(KMeansLoopIO.source(vectorState, ctx),
                                     sink -> centroids.stream(ctx, sink), ctx, framesLimit,
-                                    (vecs, n, nearest, nearestIdx) -> {
+                                    KMeansLoopIO.distanceFunction(metric), (vecs, n, nearest, nearestIdx) -> {
                                         if (dimension[0] == 0 && n > 0) {
                                             dimension[0] = vecs[0].length;
                                         }
@@ -412,8 +418,7 @@ public class KMeansLloydControllerOperatorDescriptor extends AbstractOperatorDes
                     tb.addField(DoubleSerializerDeserializer.INSTANCE, (double) count);
                     KMeansLoopIO.writeRawVector(tb, sum);
                     // One iteration emits one partial per non-empty centroid, so the batch is O(k * dim) and
-                    // outgrows a frame well before k gets large; flush and carry on rather than treating a full
-                    // frame as an error.
+                    // outgrows a frame well before k gets large; therefore a full frame flushes and carries on.
                     FrameUtils.appendToWriter(partialWriter, appender, tb.getFieldEndOffsets(), tb.getByteArray(), 0,
                             tb.getSize());
                 }
@@ -445,9 +450,8 @@ public class KMeansLloydControllerOperatorDescriptor extends AbstractOperatorDes
                     // RECLUSTER says so and names that count -- it is the only stage that knows it. What
                     // reaches here is what SURVIVED: initMode "random" seeds Lloyd directly and has no
                     // RECLUSTER to warn for it, and a cluster can also lose every row during refinement.
-                    // Neither is a statement about how many distinct vectors the input holds, so this does
-                    // not claim one -- and like RECLUSTER it warns rather than failing, so the clusters that
-                    // do exist are returned.
+                    // Neither says how many distinct vectors the input holds, so this claims nothing about
+                    // that; like RECLUSTER it warns and returns the clusters that do exist.
                     if (finalCentroids.size() < numClusters && ctx.getWarningCollector().shouldWarn()) {
                         int remaining = finalCentroids.size();
                         ctx.getWarningCollector().warn(Warning.of(null, ErrorCode.CLUSTER_BY_INVALID_INPUT,

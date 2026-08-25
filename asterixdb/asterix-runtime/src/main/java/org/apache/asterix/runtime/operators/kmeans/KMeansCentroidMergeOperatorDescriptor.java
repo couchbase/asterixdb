@@ -19,13 +19,13 @@
 package org.apache.asterix.runtime.operators.kmeans;
 
 import java.nio.ByteBuffer;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.apache.asterix.common.exceptions.ErrorCode;
 import org.apache.asterix.common.exceptions.RuntimeDataException;
+import org.apache.asterix.common.vector.VectorSimilarityMetric;
 import org.apache.hyracks.api.comm.IFrameWriter;
 import org.apache.hyracks.api.comm.VSizeFrame;
 import org.apache.hyracks.api.context.IHyracksTaskContext;
@@ -54,27 +54,14 @@ import org.apache.hyracks.dataflow.std.sort.ExternalSortRunMerger;
 import org.apache.hyracks.util.annotations.AiProvenance;
 
 /**
- * CLUSTER BY k-means‖ Lloyd loop — the single-node centroid reduce of one iteration: fold every partition's
- * {@code (count, sum)} partials into the next centroid set and broadcast it back.
+ * The Lloyd loop's single-node centroid reduce, which folds every partition's {@code (count, sum)} partials
+ * into the next centroid set and broadcasts it back. A centroid's new position is the mean of its points,
+ * and a centroid with no points anywhere is dropped, like an empty group in a grouped aggregate.
  * <p>
- * Each centroid's new position is the mean of the points assigned to it. A centroid that attracted no points
- * anywhere is <b>dropped</b>, not carried forward or re-seeded, so the centroid count can shrink across
- * iterations — this mirrors a grouped aggregate, which produces no row for an empty group, and the labeling that
- * follows the loop simply never emits that cluster.
- * <p>
- * Determinism is the delicate part, because floating-point addition is not associative: the same partials summed
- * in two different orders can differ in the last bits and, once divided, move a centroid enough to flip a
- * borderline point's assignment. Partials are therefore accumulated in {@code (centroid index, partition)} order
- * rather than in frame-arrival order, which makes a run independent of how the network interleaved the
- * partitions.
- * <p>
- * "Have I heard from every partition?" is the iteration barrier: the reduce fires on the
- * {@code nParticipants}-th end marker. Because the loop is globally serialized — no partition begins iteration
- * i+1 until iteration i's centroids have been published — at most one iteration is ever in flight, so the
- * per-iteration accumulator is emitted and discarded before the next iteration's frames arrive.
- * <p>
- * Memory: the accumulator is O(partitions · k · dim) in this node's heap, held only for the iteration in flight.
- * That is the loop's dominant memory term and it is currently uncapped, which bounds usable k.
+ * Partials are accumulated in {@code (centroid index, partition)} order; since floating-point addition is
+ * not associative, the fixed order is what keeps runs byte-identical on any network interleaving. The
+ * reduce fires on the {@code nParticipants}-th end marker, and the loop is globally serialized, so at most
+ * one iteration is in flight. The accumulator is O(partitions * k * dim) heap, held for that iteration.
  */
 @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
 public class KMeansCentroidMergeOperatorDescriptor extends AbstractSingleActivityOperatorDescriptor {
@@ -84,33 +71,17 @@ public class KMeansCentroidMergeOperatorDescriptor extends AbstractSingleActivit
     private final int nParticipants;
     /** Frame budget for the per-iteration partial sort. */
     private final int framesLimit;
+    /** Which centroid update the iteration applies; see {@link KMeansLoopIO#centroidOf}. */
+    private final VectorSimilarityMetric metric;
 
     public KMeansCentroidMergeOperatorDescriptor(IOperatorDescriptorRegistry spec, RecordDescriptor recDesc,
-            int nParticipants, int framesLimit) {
+            int nParticipants, int framesLimit, VectorSimilarityMetric metric) {
         super(spec, 1, 1);
         this.nParticipants = nParticipants;
         this.framesLimit = framesLimit;
+        this.metric = metric;
         outRecDescs[0] = recDesc; // DRAW_RD: the new centroid set, one vector per tuple
     }
-
-    /** One partition's contribution for one centroid: its local member count and component-wise sum. */
-    private static final class Partial {
-        private final int part;
-        private final int seq;
-        private final long count;
-        private final double[] sum;
-
-        private Partial(int part, int seq, long count, double[] sum) {
-            this.part = part;
-            this.seq = seq;
-            this.count = count;
-            this.sum = sum;
-        }
-    }
-
-    /** Accumulate by centroid, then by partition — never by arrival. See the class comment on determinism. */
-    private static final Comparator<Partial> MERGE_ORDER =
-            Comparator.comparingInt((Partial p) -> p.seq).thenComparingInt(p -> p.part);
 
     @Override
     public IOperatorNodePushable createPushRuntime(IHyracksTaskContext ctx,
@@ -119,11 +90,8 @@ public class KMeansCentroidMergeOperatorDescriptor extends AbstractSingleActivit
         return new AbstractUnaryInputUnaryOutputOperatorNodePushable() {
             private final FrameTupleAccessor accessor = new FrameTupleAccessor(inRecDesc);
             private final FrameTupleReference tuple = new FrameTupleReference();
-            // Partials are not accumulated in a list: every partition sends one per centroid, so the map was
-            // O(P * k * dim) on this single node -- the only term in the loop that grows with cluster size.
-            // They go through a sort keyed on (seq, part) instead, which is the order MERGE_ORDER imposed and
-            // therefore folds to byte-identical centroids, spilled or not. The loop is globally serialized, so
-            // at most one iteration is ever in flight and a single sort suffices.
+            // Partials go through a sort keyed on (seq, part), which folds to byte-identical centroids
+            // whether or not it spilled. The loop is globally serialized, so a single sort suffices.
             private final Map<Integer, Integer> endsByIter = new HashMap<>();
             private AbstractSortRunGenerator partialSort;
             private VSizeFrame sortFrame;
@@ -209,11 +177,7 @@ public class KMeansCentroidMergeOperatorDescriptor extends AbstractSingleActivit
                     int emittedSeq = 0;
                     for (int i = 0; i < weights.length; i++) {
                         if (weights[i] > 0) {
-                            double[] mean = new double[sums[i].length];
-                            for (int d = 0; d < mean.length; d++) {
-                                mean[d] = sums[i][d] / weights[i];
-                            }
-                            emitCentroid(iter, emittedSeq++, mean);
+                            emitCentroid(iter, emittedSeq++, KMeansLoopIO.centroidOf(sums[i], weights[i], metric));
                         }
                     }
                     partialSort = null; // next iteration gets a fresh sort
@@ -225,11 +189,10 @@ public class KMeansCentroidMergeOperatorDescriptor extends AbstractSingleActivit
             }
 
             /**
-             * Folds the sorted partials into per-centroid (weight, sum). Sorted by (seq, part), so each
-             * centroid's contributions arrive in partition order -- the order MERGE_ORDER produced, and the
-             * same whether or not the sort spilled. When everything fits, the generator sorts in place and
-             * produces no runs, so that case must be flushed from the sorter rather than merged: merging an
-             * empty run list would fold nothing and emit silently wrong centroids.
+             * Folds the sorted partials into per-centroid (weight, sum), where (seq, part) order makes each
+             * centroid's contributions arrive in partition order whether or not the sort spilled. A fully
+             * in-memory sort produces no runs and must be flushed from the sorter, since merging an empty
+             * run list would fold nothing and emit silently wrong centroids.
              */
             private void foldSorted(long[] weights, double[][] sums) throws HyracksDataException {
                 List<GeneratedRunFileReader> runs = partialSort.getRuns();
@@ -264,7 +227,13 @@ public class KMeansCentroidMergeOperatorDescriptor extends AbstractSingleActivit
                             if (sum == null) {
                                 sums[seq] = vec;
                             } else {
-                                for (int d = 0; d < Math.min(sum.length, vec.length); d++) {
+                                if (vec.length != sum.length) {
+                                    // Every vector was decoded at the declared dimension, so a mismatch here is
+                                    // a corrupt partial; summing a prefix would be a silently wrong centroid.
+                                    throw new RuntimeDataException(ErrorCode.ILLEGAL_STATE, "a centroid partial is "
+                                            + vec.length + " wide where its accumulator is " + sum.length);
+                                }
+                                for (int d = 0; d < sum.length; d++) {
                                     sum[d] += vec[d];
                                 }
                             }

@@ -34,24 +34,15 @@ import org.apache.hyracks.dataflow.std.base.AbstractStateObject;
 import org.apache.hyracks.dataflow.std.misc.MaterializerTaskState;
 
 /**
- * CLUSTER BY k-means‖ initialization loop: the per-partition loop-back rendezvous shared, via
- * <b>joblet-scoped state</b>, by the co-located Cost (Op1), Sample (Op3) and Release (Op5) tasks of one
- * {@code OVERSAMPLE_LOOP} sub-graph on one NC. Because the joblet state store (see {@code Joblet.stateObjectMap})
- * spans all of a job's operators on an NC and is keyed by {@link #getId()}, Op1 creates one of these under a
- * per-partition token and Op5/Op3 retrieve it by that same token.
+ * The per-partition loop-back rendezvous of one k-means loop sub-graph, shared via joblet-scoped state by
+ * the co-located Cost, Sample and Release tasks on one NC: Cost creates it under a per-partition token,
+ * the others retrieve it by that token.
  * <p>
- * It carries the {@link Semaphore} permit that paces the loop: Op1 awaits a turn after emitting each round's
- * local potential, and Op5 hands the turn back after appending that round's global draws to the shared pool run
- * file. That release/acquire pair supplies the happens-before which makes the pool run file's freshly appended
- * size visible to Op1's next-round read. A tail that fails instead calls {@link #abort()}, so the head raises
- * immediately instead of waiting out the round; see {@link #abort()} for what that is and is not worth. The growing pool and the resident vectors live
- * in their own {@code MaterializerTaskState} run files (also joblet-scoped, keyed per partition); this object is
- * just the synchronization handle.
- * <p>
- * A reader (Op3/Op5) may indeed look this up before Op1 has created it, because the pipeline opens all tasks at
- * once -- but only if it looks in {@code open()}. The data-flow ordering (Op3/Op5 touch the loop only after
- * Op1's first cost) guarantees it is present by first <em>frame</em>, so readers resolve state there instead
- * and no wait is needed. See {@link #required(IHyracksTaskContext, Object)}.
+ * It carries the {@link Semaphore} permit that paces the loop: the head awaits a turn after emitting a
+ * round, the tail hands it back after appending the round's draws; that release/acquire pair is the
+ * happens-before that makes the appended run-file size visible to the next round. A failing tail calls
+ * {@link #abort()}, which raises the head. Readers must resolve this state on first frame, not in
+ * {@code open()}; see {@link #required(IHyracksTaskContext, Object)}.
  */
 @org.apache.hyracks.util.annotations.AiProvenance(agent = org.apache.hyracks.util.annotations.AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = org.apache.hyracks.util.annotations.AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = org.apache.hyracks.util.annotations.AiProvenance.ContributionKind.ASSISTED)
 public final class LoopControlState extends AbstractStateObject {
@@ -60,13 +51,10 @@ public final class LoopControlState extends AbstractStateObject {
     // grants one permit per completed round/iteration.
     private final transient Semaphore permit = new Semaphore(0);
 
-    // Used by the Lloyd loop only, where each iteration REPLACES the centroid set (the oversampling loop's pool
-    // instead grows). Both live in run files: the set is O(k * dim) and k is the user's to choose. Reads/writes
-    // are ordered by the permit; see CentroidStore.
+    // Lloyd loop only: the centroid set each iteration replaces. Permit-ordered; see CentroidStore.
     private final transient CentroidStore centroids;
 
-    // Set by abort() from a sibling task's fail(). Read after every successful acquire, so a waiter that was
-    // woken by the abort raises instead of proceeding on a loop that will never complete.
+    // Set by abort() from a sibling task's fail(); checked after every acquire so a woken waiter raises.
     private volatile transient boolean aborted;
 
     public LoopControlState(JobId jobId, Object id, TaskId taskId) {
@@ -80,16 +68,9 @@ public final class LoopControlState extends AbstractStateObject {
     }
 
     /**
-     * The loop head waits for its next turn, for as long as that takes. Raises rather than returning when
-     * the loop was aborted.
-     * <p>
-     * Deliberately unbounded. How long a round takes is a property of the data and the parameters -- a large
-     * input with a large k is entitled to hours -- so any deadline here is a guess about someone's workload,
-     * and would fail a healthy query for being slow. Liveness comes from the two things that do know
-     * something went wrong: a job abort, which arrives as a thread interrupt and unwinds this in
-     * milliseconds because {@link Semaphore#acquire()} is interruptible, and {@link #abortAll}, which a
-     * failing sibling calls. What this loop guarantees is that it does not exhaust memory, not that it
-     * finishes by any particular time.
+     * The loop head waits for its next turn, unbounded, and raises when the loop was aborted. A deadline
+     * would fail a healthy slow query; liveness comes from job aborts (a thread interrupt, since
+     * {@link Semaphore#acquire()} is interruptible) and from {@link #abortAll} on a failing sibling.
      *
      * @param what names the waiting loop, for the error message.
      */
@@ -102,20 +83,10 @@ public final class LoopControlState extends AbstractStateObject {
     }
 
     /**
-     * Wakes every waiter, permanently, because this partition's loop can no longer make progress. Called from
-     * the {@code fail()} of the tasks that would otherwise have released the turn.
-     * <p>
-     * It is worth being exact about what this buys, because on the normal path a job abort already interrupts
-     * the head and unwinds it in milliseconds. What this covers is narrower and still real:
-     * <ul>
-     * <li>the window between a sibling task failing and the job-level abort reaching this task, during which
-     * the head would otherwise sit idle holding its slot, run files and heap;</li>
-     * <li>a failure that never routes through {@code Task.abort()} at all;</li>
-     * <li>and, independent of timing, making the head <em>raise</em> rather than proceed on a loop whose tail
-     * is gone -- an interrupt alone would not distinguish that from any other cancellation.</li>
-     * </ul>
-     * The cause is not carried here: {@code IFrameWriter.fail()} takes no argument, and the failing task
-     * reports its own exception through the job anyway.
+     * Wakes every waiter, permanently: this partition's loop cannot make progress. Called from the
+     * {@code fail()} of the tasks that would have released the turn. It covers the window between a sibling
+     * failing and the job-level abort arriving, failures that never route through {@code Task.abort()}, and
+     * it makes the head raise on a loop whose tail is gone. The cause travels through the job, not here.
      */
     public void abort() {
         aborted = true;
@@ -161,20 +132,13 @@ public final class LoopControlState extends AbstractStateObject {
     }
 
     /**
-     * Creates a run file addressed by one of the ids above rather than by the producing task.
-     * <p>
-     * {@link MaterializerTaskState}'s constructor takes a {@link TaskId}, which is how a state is normally
-     * addressed -- the way {@code KMeansMerge} finds its own store activity's output. That does not work
-     * across the loop: Sample and Release are separate operator descriptors and cannot derive the id of a
-     * task belonging to Cost. They agree on a {@code loopKey} string instead, so the constructor's id is
-     * replaced immediately. Doing that here keeps the replacement in one place instead of at each call site,
-     * where it read as though the task id mattered.
+     * Creates a run file addressed by one of the shared ids above: Sample and Release are separate operator
+     * descriptors and cannot derive a Cost task's id, so the tasks agree on a {@code loopKey} and the
+     * constructor's task id is replaced with it immediately.
      */
     public static MaterializerTaskState sharedRunFile(IHyracksTaskContext ctx, Object id) throws HyracksDataException {
-        // The task id the constructor takes is only stored as the state's id, and the line below replaces it;
-        // the run file is named from the joblet's workspace, not from it. So it carries no meaning here --
-        // this passes the task's own id rather than fabricating one, and the id that matters is the shared
-        // key set next, which is what the sibling tasks look the state up by.
+        // The constructor's task id is only stored as the state's id; setId below replaces it with the
+        // shared key the sibling tasks look the state up by.
         MaterializerTaskState state =
                 new MaterializerTaskState(ctx.getJobletContext().getJobId(), ctx.getTaskAttemptId().getTaskId());
         state.setId(id);
@@ -183,19 +147,11 @@ public final class LoopControlState extends AbstractStateObject {
     }
 
     /**
-     * Look up a joblet state object a sibling task registered. There is deliberately no wait here: every caller
-     * is ordered behind the registering task, so a miss is a broken invariant rather than a race to sleep on.
-     * <p>
-     * Two orderings supply that guarantee.
-     * <ul>
-     * <li><b>Within one operator</b> — the store activities are joined to the loop activity by
-     * {@code addBlockingEdge}, so the loop cannot start until they have completed and registered.</li>
-     * <li><b>Across operators</b> — the loop sub-graph is a linear chain (Op1 -> ... -> Op5, all co-located by
-     * an absolute partition constraint), and every downstream consumer's input descends from Op1's loop
-     * output. A frame can therefore only reach a consumer after the loop activity ran, which is itself after
-     * the store activities completed. Consumers must resolve state on first frame, NOT in {@code open()}:
-     * Hyracks opens the whole pipeline before any data flows, so {@code open()} carries no such guarantee.</li>
-     * </ul>
+     * Looks up a joblet state object a sibling task registered; no wait, since every caller is ordered
+     * behind the registering task and a miss is a broken invariant. Within one operator, blocking edges
+     * order the loop behind its store activities; across operators, a frame reaches a consumer only after
+     * the loop ran. Consumers must resolve state on first frame, not in {@code open()}: Hyracks opens the
+     * whole pipeline before any data flows.
      */
     public static IStateObject required(IHyracksTaskContext ctx, Object id) throws HyracksDataException {
         IStateObject state = ctx.getStateObject(id);

@@ -45,16 +45,15 @@ import org.apache.hyracks.util.annotations.AiProvenance;
  * consumes each round's global draw union + end marker (broadcast from PoolMerge, Op4) and:
  * <ul>
  * <li>for each drawn vector, <b>appends</b> it to this partition's shared pool run file (turning {@code pool[r]}
- * into {@code pool[r+1]}) — the raw-double {@link KMeansLoopIO#POOL_RD} format that Cost/Sample read back;</li>
- * <li>on the end marker, having appended all of the round's draws, hands the turn back to Cost —
- * waking the co-located Cost (Op1), which was parked on {@code acquire()}, for the next round.</li>
+ * into {@code pool[r+1]}), in the raw-double {@link KMeansLoopIO#POOL_RD} format that Cost/Sample read
+ * back;</li>
+ * <li>on the end marker, hands the turn back to Cost, which was parked on {@code acquire()}.</li>
  * </ul>
- * Appending strictly before releasing is what guarantees Cost reads a complete {@code pool[r+1]}; the
- * {@code release()}/{@code acquire()} pair also supplies the happens-before for the appended frames' visibility.
- * The pool run file and permit are looked up from joblet state (created by Cost) on the first frame rather than
- * in {@code open()}: the pipeline opens all tasks at once, but a frame can only arrive after Cost's loop ran,
- * which is after its store activities registered. Op5 has no output (a sink); the loop ends when its input
- * EOFs (Cost closes).
+ * Appending strictly before releasing guarantees Cost reads a complete {@code pool[r+1]}, since the
+ * {@code release()}/{@code acquire()} pair supplies the happens-before. The pool run file and permit are
+ * looked up from joblet state on the first frame and not in {@code open()}, because a frame can only arrive
+ * after Cost's loop ran, which is after its store activities registered. Op5 is a sink; the loop ends when
+ * its input EOFs.
  */
 @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
 public class KMeansReleaseOperatorDescriptor extends AbstractSingleActivityOperatorDescriptor {
@@ -137,10 +136,8 @@ public class KMeansReleaseOperatorDescriptor extends AbstractSingleActivityOpera
 
             @Override
             public void fail() throws HyracksDataException {
-                // This task is the loop tail: if it dies, Cost's turn never arrives. A job abort would also
-                // interrupt the head, so this is not what saves it from the turn timeout -- it closes the gap
-                // before the abort arrives, and makes the head raise rather than proceed. See
-                // LoopControlState#abort.
+                // Loop tail: if it dies, Cost's turn never arrives. Abort closes the gap until the job-level
+                // abort interrupts the head, and makes it raise. See LoopControlState#abort.
                 if (ctl != null) {
                     ctl.abort();
                 }

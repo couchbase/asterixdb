@@ -204,9 +204,8 @@ final class KMeansStageRuntime {
      * Folds the weigh partials and hands each pool member's total to {@code sink} as soon as it is complete.
      * <p>
      * The sort delivers partials in (pool position, origin partition) order, so a member is finished the
-     * moment the position advances and nothing needs collecting -- the caller turns each total into a weighted
-     * mean and passes it on, instead of holding a count and a sum vector per member. Members that attracted
-     * nothing are not reported.
+     * moment the position advances and the caller can turn each total straight into a weighted mean. Members
+     * that attracted nothing are not reported.
      * <p>
      * The partition order also fixes the summation. Floating-point addition is not associative, so folding a
      * member's contributions in a different order yields different centroids; an external sort gives the same
@@ -227,8 +226,8 @@ final class KMeansStageRuntime {
         final FrameTupleReference t = new FrameTupleReference();
 
         /**
-         * Folds one pool position at a time. The sort delivers positions in ascending order, so a position is
-         * final the moment the next one appears -- there is never more than one open.
+         * Folds one pool position at a time. The sort delivers positions in ascending order, so a position
+         * is final the moment the next one appears and only one is ever open.
          */
         final class Fold implements IFrameWriter {
             private int position = -1;
@@ -258,7 +257,13 @@ final class KMeansStageRuntime {
                         weight = 0L;
                         sum = vec; // the first contribution owns the buffer the rest accumulate into
                     } else {
-                        for (int d = 0; d < Math.min(sum.length, vec.length); d++) {
+                        if (vec.length != sum.length) {
+                            // Every vector was decoded at the declared dimension, so a mismatch here is a
+                            // corrupt partial; summing a prefix would be a silently wrong centroid.
+                            throw new RuntimeDataException(ErrorCode.ILLEGAL_STATE, "a centroid partial is "
+                                    + vec.length + " wide where its accumulator is " + sum.length);
+                        }
+                        for (int d = 0; d < sum.length; d++) {
                             sum[d] += vec[d];
                         }
                     }
@@ -286,10 +291,9 @@ final class KMeansStageRuntime {
         }
 
         Fold fold = new Fold();
-        // When the partials fit the budget the generator sorts IN MEMORY and produces no runs at all -- the
-        // sorted tuples stay in the frame sorter. Merging an empty run list would fold nothing and hand back
-        // silently wrong centroids, so the in-memory case has to be flushed from the sorter instead. This is
-        // the same branch ExternalSortOperatorDescriptor's merge activity makes.
+        // When the partials fit the budget the generator sorts in memory and produces no runs, so the
+        // in-memory case must be flushed from the sorter; merging an empty run list would fold nothing and
+        // hand back silently wrong centroids. ExternalSortOperatorDescriptor's merge makes the same branch.
         fold.open();
         try {
             if (runs.isEmpty()) {
@@ -301,35 +305,6 @@ final class KMeansStageRuntime {
         } finally {
             fold.close();
         }
-    }
-
-    /** Streams the materialized vector input, decoding each tuple's vector column and feeding it to sink. */
-    void streamVectors(MaterializerTaskState state, int vectorColumn, VectorSink sink) throws HyracksDataException {
-        final FrameTupleAccessor vecAccessor = new FrameTupleAccessor(vecRecDesc);
-        state.writeOut(new IFrameWriter() {
-            @Override
-            public void open() {
-            }
-
-            @Override
-            public void nextFrame(ByteBuffer buffer) throws HyracksDataException {
-                failIfInterrupted();
-                vecAccessor.reset(buffer);
-                int tupleCount = vecAccessor.getTupleCount();
-                for (int i = 0; i < tupleCount; i++) {
-                    tupleRef.reset(vecAccessor, i);
-                    sink.accept(decodeVector(tupleRef, vectorColumn));
-                }
-            }
-
-            @Override
-            public void fail() {
-            }
-
-            @Override
-            public void close() {
-            }
-        }, new VSizeFrame(ctx), false);
     }
 
     private double[] decodeVector(FrameTupleReference tuple, int col) throws HyracksDataException {
@@ -369,11 +344,6 @@ final class KMeansStageRuntime {
 
     Emitter newEmitter() throws HyracksDataException {
         return new Emitter();
-    }
-
-    @FunctionalInterface
-    interface VectorSink {
-        void accept(double[] vec) throws HyracksDataException;
     }
 
     /** Serialization state for one emit pass; every value is an OPEN list (tagged items). */

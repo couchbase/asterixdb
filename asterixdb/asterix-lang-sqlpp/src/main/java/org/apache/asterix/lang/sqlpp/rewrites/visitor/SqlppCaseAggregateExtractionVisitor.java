@@ -89,7 +89,8 @@ public final class SqlppCaseAggregateExtractionVisitor extends AbstractSqlppExpr
             CallExpr resultExpr = (CallExpr) super.visit(callExpr, arg);
             if (FunctionMapUtil.isSql92AggregateFunction(resultExpr.getFunctionSignature())) {
                 StackElement stackElement = stack.peek();
-                if (stackElement != null && stackElement.getSelectBlock().hasGroupbyClause()) {
+                if (stackElement != null && (stackElement.getSelectBlock().hasGroupbyClause()
+                        || stackElement.getSelectBlock().hasClusterbyClause())) {
                     VarIdentifier v = stackElement.addPendingLetClause(resultExpr);
                     VariableExpr vExpr = new VariableExpr(v);
                     vExpr.setSourceLocation(callExpr.getSourceLocation());

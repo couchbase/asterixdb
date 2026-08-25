@@ -80,11 +80,10 @@ public final class KMeansVectorCodec {
         }
 
         /**
-         * Decodes the vector column, or returns {@code null} -- the caller's cue to skip the row with a
-         * warning -- for anything unusable: not an ordered list, wrong width, or a non-numeric/NaN element.
-         * The width is enforced here, on the assembled value, rather than as a desugared WHERE conjunct: the
-         * columnar filter pushdown can separate such a conjunct from its is-array guard and evaluate it once
-         * per array ELEMENT inside the scan.
+         * Decodes the vector column, or returns {@code null} for anything unusable (not an ordered list,
+         * wrong width, or a non-numeric/NaN element), which cues the caller to skip the row. The width is
+         * enforced here on the assembled value, since a WHERE conjunct could be separated from its is-array
+         * guard by the columnar filter pushdown and evaluated per array element inside the scan.
          */
         public double[] decode(FrameTupleReference tuple, int col) throws HyracksDataException {
             try {
@@ -113,8 +112,8 @@ public final class KMeansVectorCodec {
     }
 
     /**
-     * Emits pool members as {@code KIND_POOL} open-list envelopes to a writer — the exact format
-     * {@code readInput} decodes. All items are tagged doubles; the vector is a nested open list.
+     * Emits pool members as {@code KIND_POOL} open-list envelopes, the exact format {@code readInput}
+     * decodes. All items are tagged doubles, and the vector is a nested open list.
      */
     public static final class PoolEnvelopeWriter {
         private final IFrameWriter writer;
@@ -137,9 +136,9 @@ public final class KMeansVectorCodec {
         }
 
         /**
-         * Appends one general inter-stage envelope {@code [kind, partition, seq, score, vec]} — the exact format
-         * the weighing pass emits and RECLUSTER decodes. For a partial: {@code kind=KIND_PARTIAL}, {@code seq}=pool position,
-         * {@code score}=count, {@code vec}=running sum.
+         * Appends one inter-stage envelope {@code [kind, partition, seq, score, vec]}, the exact format the
+         * weighing pass emits and RECLUSTER decodes. A partial carries {@code kind=KIND_PARTIAL},
+         * {@code seq}=pool position, {@code score}=count and {@code vec}=running sum.
          */
         public void envelope(double kind, int partition, int seq, double score, double[] vec)
                 throws HyracksDataException {
@@ -167,8 +166,8 @@ public final class KMeansVectorCodec {
         }
 
         /**
-         * Appends one bare vector (no envelope wrapper) as a single ordered-list field — the shape a merge stage
-         * emits for a centroid set, and what a consumer expecting plain vectors decodes.
+         * Appends one bare vector as a single ordered-list field, which is the shape a merge stage emits for
+         * a centroid set and what a plain-vector consumer decodes.
          */
         public void plainVector(double[] vec) throws HyracksDataException {
             try {

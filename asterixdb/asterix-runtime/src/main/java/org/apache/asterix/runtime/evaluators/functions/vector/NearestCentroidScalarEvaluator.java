@@ -23,13 +23,16 @@ import java.io.DataOutput;
 import java.io.IOException;
 
 import org.apache.asterix.common.exceptions.ErrorCode;
+import org.apache.asterix.common.vector.VectorSimilarityMetric;
 import org.apache.asterix.formats.nontagged.SerializerDeserializerProvider;
 import org.apache.asterix.om.base.AInt32;
 import org.apache.asterix.om.base.AMutableInt32;
+import org.apache.asterix.om.types.ATypeTag;
 import org.apache.asterix.om.types.BuiltinType;
 import org.apache.asterix.runtime.evaluators.common.ListAccessor;
 import org.apache.asterix.runtime.evaluators.functions.PointableHelper;
 import org.apache.asterix.runtime.utils.VectorDistanceCalculation;
+import org.apache.asterix.runtime.utils.VectorDistanceFunctionFactory;
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
 import org.apache.hyracks.algebricks.runtime.base.IScalarEvaluator;
 import org.apache.hyracks.algebricks.runtime.base.IScalarEvaluatorFactory;
@@ -43,6 +46,8 @@ import org.apache.hyracks.data.std.api.IPointable;
 import org.apache.hyracks.data.std.primitive.VoidPointable;
 import org.apache.hyracks.data.std.util.ArrayBackedValueStorage;
 import org.apache.hyracks.dataflow.common.data.accessors.IFrameTupleReference;
+import org.apache.hyracks.storage.am.vector.api.IVTreeDistanceFunction;
+import org.apache.hyracks.util.string.UTF8StringUtil;
 
 /**
  * Runtime for {@code nearest_centroid(point, centroids)}: finds the centroid closest to {@code point} under
@@ -57,6 +62,12 @@ public class NearestCentroidScalarEvaluator implements IScalarEvaluator {
 
     private final IScalarEvaluator pointEval;
     private final IScalarEvaluator centroidsEval;
+    // Optional third argument naming the metric. The expansion rule emits a literal, so caching by name always hits.
+    private final IScalarEvaluator metricEval;
+    private final IPointable metricVal = new VoidPointable();
+    private final StringBuilder metricName = new StringBuilder();
+    private String resolvedMetricName;
+    private IVTreeDistanceFunction distanceFn = VectorDistanceCalculation.EUCLIDEAN_SQUARED_FN;
     private final IPointable pointVal = new VoidPointable();
     private final IPointable centroidsVal = new VoidPointable();
 
@@ -86,6 +97,43 @@ public class NearestCentroidScalarEvaluator implements IScalarEvaluator {
         this.decoder = new VectorListDecoder();
         this.pointEval = args[0].createScalarEvaluator(context);
         this.centroidsEval = args[1].createScalarEvaluator(context);
+        this.metricEval = args.length > 2 ? args[2].createScalarEvaluator(context) : null;
+    }
+
+    /**
+     * Resolves the metric argument to a distance function, caching by name. Returns false and warns if the
+     * name is not a known metric or names one k-means cannot use.
+     */
+    private boolean resolveMetric(IFrameTupleReference tuple) throws HyracksDataException {
+        if (metricEval == null) {
+            return true;
+        }
+        metricEval.evaluate(tuple, metricVal);
+        byte[] bytes = metricVal.getByteArray();
+        int offset = metricVal.getStartOffset();
+        if (bytes[offset] != ATypeTag.SERIALIZED_STRING_TYPE_TAG) {
+            warn("nearest_centroid: metric must be a string");
+            return false;
+        }
+        metricName.setLength(0);
+        UTF8StringUtil.toString(metricName, bytes, offset + 1);
+        String name = metricName.toString();
+        if (name.equals(resolvedMetricName)) {
+            return true;
+        }
+        VectorSimilarityMetric metric = VectorSimilarityMetric.fromAlias(name);
+        if (metric == null) {
+            warn("nearest_centroid: unknown metric '" + name + "'");
+            return false;
+        }
+        if (metric == VectorSimilarityMetric.DOT) {
+            // dotDistance is a negated inner product, unbounded below, so no centroid minimizes it.
+            warn("nearest_centroid: metric 'dot' is not usable for clustering");
+            return false;
+        }
+        distanceFn = new VectorDistanceFunctionFactory(metric).createDistanceFunction();
+        resolvedMetricName = name;
+        return true;
     }
 
     @Override
@@ -94,6 +142,11 @@ public class NearestCentroidScalarEvaluator implements IScalarEvaluator {
         try {
             pointEval.evaluate(tuple, pointVal);
             centroidsEval.evaluate(tuple, centroidsVal);
+
+            if (!resolveMetric(tuple)) {
+                PointableHelper.setNull(result);
+                return;
+            }
 
             if (PointableHelper.checkAndSetMissingOrNull(result, pointVal, centroidsVal)) {
                 return;
@@ -114,7 +167,7 @@ public class NearestCentroidScalarEvaluator implements IScalarEvaluator {
             }
             pointArr = decoder.createArrayFromList(pointList, decoder.ensureDoubleCapacity(pointArr, dim));
 
-            // Scan the centroids (list of lists) and keep the argmin under squared-Euclidean distance.
+            // Scan the centroids (list of lists) and keep the argmin under the resolved metric.
             centroidsList.reset(centroidsVal.getByteArray(), centroidsVal.getStartOffset());
             int k = centroidsList.size();
             if (k == 0) {
@@ -140,7 +193,7 @@ public class NearestCentroidScalarEvaluator implements IScalarEvaluator {
                 }
                 centroidArr =
                         decoder.createArrayFromList(oneCentroidList, decoder.ensureDoubleCapacity(centroidArr, dim));
-                double d = VectorDistanceCalculation.euclideanSquared(pointArr, centroidArr);
+                double d = distanceFn.apply(pointArr, centroidArr);
                 if (Double.isNaN(d)) {
                     warn("nearest_centroid: non-numeric point or centroid " + i);
                     PointableHelper.setNull(result);

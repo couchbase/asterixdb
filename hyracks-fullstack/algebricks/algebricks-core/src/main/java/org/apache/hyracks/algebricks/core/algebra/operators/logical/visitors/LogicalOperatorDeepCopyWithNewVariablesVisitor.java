@@ -43,6 +43,7 @@ import org.apache.hyracks.algebricks.core.algebra.metadata.IProjectionFiltration
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractLogicalOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AggregateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AssignOperator;
+import org.apache.hyracks.algebricks.core.algebra.operators.logical.ClusterByOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DataSourceScanOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DelegateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DistinctOperator;
@@ -80,6 +81,7 @@ import org.apache.hyracks.algebricks.core.algebra.typing.ITypingContext;
 import org.apache.hyracks.algebricks.core.algebra.util.OperatorManipulationUtil;
 import org.apache.hyracks.algebricks.core.algebra.util.OperatorPropertiesUtil;
 import org.apache.hyracks.algebricks.core.algebra.visitors.IQueryOperatorVisitor;
+import org.apache.hyracks.util.annotations.AiProvenance;
 
 /**
  * This visitor deep-copies a query plan but uses a new set of variables. Method
@@ -537,18 +539,40 @@ public class LogicalOperatorDeepCopyWithNewVariablesVisitor
     @Override
     public ILogicalOperator visitKMeansStageOperator(KMeansStageOperator op, ILogicalOperator arg)
             throws AlgebricksException {
-        // vectorRef is null for the single-input merge modes (RECLUSTER/LLOYD).
+        // vectorRef is null for RECLUSTER, the single-input mode.
         Mutable<ILogicalExpression> vectorRefCopy = op.getVectorVariable() == null ? null
                 : new MutableObject<>(new VariableReferenceExpression(deepCopyVariable(op.getVectorVariable())));
         KMeansStageOperator opCopy = new KMeansStageOperator(vectorRefCopy,
                 new MutableObject<ILogicalExpression>(
                         new VariableReferenceExpression(deepCopyVariable(op.getPoolVariable()))),
-                deepCopyVariable(op.getCandidateVariable()), op.getCandidateVarType(), op.getTopCount());
-        opCopy.setMode(op.getMode());
-        opCopy.setSeed(op.getSeed());
-        opCopy.setLoopRounds(op.getLoopRounds());
-        opCopy.setDimension(op.getDimension());
+                deepCopyVariable(op.getCandidateVariable()), op.getCandidateVarType(), op.getTopCount(), op.getMode(),
+                op.getSeed(), op.getLoopRounds(), op.getDimension(), op.getMetric());
         deepCopyInputsAnnotationsAndExecutionMode(op, arg, opCopy);
+        return opCopy;
+    }
+
+    @Override
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
+    public ILogicalOperator visitClusterByOperator(ClusterByOperator op, ILogicalOperator arg)
+            throws AlgebricksException {
+        ClusterByOperator opCopy = new ClusterByOperator(
+                new MutableObject<>(new VariableReferenceExpression(deepCopyVariable(op.getVectorVariable()))),
+                deepCopyVariable(op.getClusterIdVariable()), op.getClusterIdVarType(),
+                deepCopyVariable(op.getCentroidVariable()), op.getCentroidVarType(),
+                deepCopyVariable(op.getMembersVariable()), op.getMembersVarType(), op.getOptions());
+        if (op.getMemberRecordRef() != null) {
+            opCopy.setMemberRecordRef(exprDeepCopyVisitor.deepCopyExpressionReference(op.getMemberRecordRef()));
+        }
+        opCopy.setMembersTypeComputer(op.getMembersTypeComputer());
+        if (op.getAssignedCentroidVariable() != null) {
+            opCopy.setAssignedCentroidVariable(deepCopyVariable(op.getAssignedCentroidVariable()));
+        }
+        deepCopyInputsAnnotationsAndExecutionMode(op, arg, opCopy);
+        for (Pair<LogicalVariable, Mutable<ILogicalExpression>> p : op.getDecorList()) {
+            opCopy.addDecorExpression(deepCopyVariable(p.first),
+                    exprDeepCopyVisitor.deepCopyExpressionReference(p.second).getValue());
+        }
+        deepCopyPlanList(op.getNestedPlans(), opCopy.getNestedPlans(), opCopy);
         return opCopy;
     }
 

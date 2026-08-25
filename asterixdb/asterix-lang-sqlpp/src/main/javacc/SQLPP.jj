@@ -6034,6 +6034,10 @@ SelectBlock SelectBlock() throws ParseException:
           |
             LOOKAHEAD({laIdentifier(CLUSTER) && laToken(2, BY)})
             clusterByClause = ClusterbyClause()
+            (
+                gbyLetClauses = LetClause()
+            )?
+            (havingClause = HavingClause())?
           )?
         )
         |
@@ -6074,6 +6078,10 @@ SelectBlock SelectBlock() throws ParseException:
      |
         LOOKAHEAD({laIdentifier(CLUSTER) && laToken(2, BY)})
         clusterByClause = ClusterbyClause()
+        (
+            gbyLetClauses = LetClause()
+        )?
+        (havingClause = HavingClause())?
      )?
      selectClause = SelectClause()
     )

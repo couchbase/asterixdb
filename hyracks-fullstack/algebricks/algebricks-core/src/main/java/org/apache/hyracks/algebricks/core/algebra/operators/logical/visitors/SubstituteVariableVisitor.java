@@ -37,6 +37,7 @@ import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractUnne
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractUnnestNonMapOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AggregateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AssignOperator;
+import org.apache.hyracks.algebricks.core.algebra.operators.logical.ClusterByOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DataSourceScanOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DelegateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DistinctOperator;
@@ -323,6 +324,34 @@ public class SubstituteVariableVisitor
         }
         if (op.getCandidateVariable().equals(pair.first)) {
             op.setCandidateVariable(pair.second);
+        }
+        return null;
+    }
+
+    @Override
+    public Void visitClusterByOperator(ClusterByOperator op, Pair<LogicalVariable, LogicalVariable> pair)
+            throws AlgebricksException {
+        if (op.getVectorVariable().equals(pair.first)) {
+            op.getVectorRef().setValue(new VariableReferenceExpression(pair.second));
+        }
+        if (op.getClusterIdVariable().equals(pair.first)) {
+            op.setClusterIdVariable(pair.second);
+        }
+        if (op.getCentroidVariable().equals(pair.first)) {
+            op.setCentroidVariable(pair.second);
+        }
+        if (op.getMembersVariable().equals(pair.first)) {
+            op.setMembersVariable(pair.second);
+        }
+        if (op.getAssignedCentroidVariable() != null && op.getAssignedCentroidVariable().equals(pair.first)) {
+            op.setAssignedCentroidVariable(pair.second);
+        }
+        substInNestedPlans(op, pair.first, pair.second);
+        for (Pair<LogicalVariable, Mutable<ILogicalExpression>> p : op.getDecorList()) {
+            if (p.first.equals(pair.first)) {
+                p.first = pair.second;
+            }
+            p.second.getValue().substituteVar(pair.first, pair.second);
         }
         return null;
     }

@@ -31,6 +31,7 @@ import org.apache.hyracks.algebricks.core.algebra.base.LogicalVariable;
 import org.apache.hyracks.algebricks.core.algebra.expressions.ConstantExpression;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AggregateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AssignOperator;
+import org.apache.hyracks.algebricks.core.algebra.operators.logical.ClusterByOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DataSourceScanOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DelegateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DistinctOperator;
@@ -311,6 +312,13 @@ public class CardinalityInferenceVisitor implements ILogicalOperatorVisitor<Long
 
     @Override
     public Long visitKMeansStageOperator(KMeansStageOperator op, Void arg) throws AlgebricksException {
+        // The output is a candidate set sized by the requested cluster count, not by how many rows came in,
+        // so the input's cardinality says nothing about it.
+        return UNKNOWN;
+    }
+
+    @Override
+    public Long visitClusterByOperator(ClusterByOperator op, Void arg) throws AlgebricksException {
         // The output is a candidate set sized by the requested cluster count, not by how many rows came in,
         // so the input's cardinality says nothing about it.
         return UNKNOWN;

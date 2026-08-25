@@ -86,11 +86,7 @@ public class KMeansUtils {
         };
     }
 
-    /**
-     * Normalize {@code a} in place to unit L2 norm (no-op if the norm is zero or NaN). Local copy of the
-     * former {@code VectorDistanceArrCalculation.normalizeL2}, which the reorganized VectorDistanceCalculation
-     * (double[]-only distance API) no longer exposes.
-     */
+    /** Normalizes {@code a} in place to unit L2 norm; a no-op if the norm is zero or NaN. */
     public static void normalizeL2(double[] a) {
         double norm = l2Norm(a);
         if (norm > 0.0 && !Double.isNaN(norm)) {

@@ -27,7 +27,8 @@ import java.util.List;
 
 import org.apache.asterix.common.exceptions.ErrorCode;
 import org.apache.asterix.common.exceptions.RuntimeDataException;
-import org.apache.asterix.runtime.utils.VectorDistanceCalculation;
+import org.apache.asterix.common.vector.VectorSimilarityMetric;
+import org.apache.asterix.runtime.utils.VectorDistanceFunctionFactory;
 import org.apache.hyracks.api.comm.VSizeFrame;
 import org.apache.hyracks.api.context.IHyracksTaskContext;
 import org.apache.hyracks.api.dataflow.TaskId;
@@ -47,21 +48,15 @@ import org.apache.hyracks.dataflow.common.data.marshalling.DoubleSerializerDeser
 import org.apache.hyracks.dataflow.common.data.marshalling.IntegerSerializerDeserializer;
 import org.apache.hyracks.dataflow.common.io.RunFileReader;
 import org.apache.hyracks.dataflow.std.misc.MaterializerTaskState;
+import org.apache.hyracks.storage.am.vector.api.IVTreeDistanceFunction;
 import org.apache.hyracks.util.annotations.AiProvenance;
 
 /**
- * CLUSTER BY k-means‖ initialization loop — shared wire formats and raw-vector (de)serialization
- * for the loop's internal edges and run files. These frames never leave the loop sub-graph -- the downstream
- * RECLUSTER is fed by the separate envelopes on Op1's pool output -- so they use a compact <b>raw double[]</b>
- * encoding
- * rather than the tagged ordered-list envelope.
- * <p>
- * A vector field is simply its {@code dim} components written back-to-back as raw doubles ({@code dim * 8} bytes);
- * it is read straight off the frame by byte offset ({@link #readRawVector}). The vector column's declared
- * {@link ISerializerDeserializer} in the record descriptors below is therefore a <b>placeholder</b>: every read
- * goes through {@link org.apache.hyracks.dataflow.common.comm.io.FrameTupleAccessor} field offsets and every write
- * through {@link #writeRawVector}; the serde itself is never invoked, and the broadcast/M-to-1 connectors copy
- * frames byte-for-byte without deserializing.
+ * CLUSTER BY k-means‖ loops: shared wire formats and raw-vector (de)serialization for the loops' internal
+ * edges and run files. A vector field is its {@code dim} components written back-to-back as raw doubles,
+ * which {@link #readRawVector} reads by byte offset and {@link #writeRawVector} writes. The vector column's
+ * declared {@link ISerializerDeserializer} in the descriptors below is therefore a placeholder and is never
+ * invoked.
  */
 @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
 public final class KMeansLoopIO {
@@ -78,14 +73,9 @@ public final class KMeansLoopIO {
             IntegerSerializerDeserializer.INSTANCE, DoubleSerializerDeserializer.INSTANCE });
 
     /**
-     * Cost -> PhiMerge: {@code {round:int, part:int, localSigma:double}}.
-     * <p>
-     * The partition id is carried so PhiMerge can reduce in a fixed order. Without it the only order available
-     * is network arrival, which varies run to run -- and floating-point addition is not associative, so the
-     * same partials would produce different phi values, hence different draw probabilities, hence a different
-     * clustering from the same query. The rest of the loop is deterministic on any topology: a draw depends
-     * only on the vector (see {@link #uniformDraw}) and PoolMerge sorts its draws. This keeps the reduce from
-     * being the one place that is not.
+     * Cost -> PhiMerge: {@code {round:int, part:int, localSigma:double}}. The partition id lets PhiMerge
+     * reduce in a fixed order; since floating-point addition is not associative, an arrival-order sum could
+     * change phi and with it the draw probabilities and the clustering.
      */
     public static final RecordDescriptor SIGMA_RD =
             new RecordDescriptor(new ISerializerDeserializer[] { IntegerSerializerDeserializer.INSTANCE,
@@ -93,8 +83,7 @@ public final class KMeansLoopIO {
 
     /**
      * Sample -> PoolMerge and PoolMerge -> Release: {@code {round:int, part:int, seq:int, kind:int, vec:rawDoubles}}.
-     * For {@link #KIND_END} markers, {@code part} identifies the finishing partition and {@code vec}/{@code seq} are
-     * ignored. The last column is a raw-double vector (see class comment).
+     * For {@link #KIND_END} markers, {@code part} is the finishing partition and {@code seq}/{@code vec} are ignored.
      */
     public static final RecordDescriptor DRAW_RD = new RecordDescriptor(new ISerializerDeserializer[] {
             IntegerSerializerDeserializer.INSTANCE, IntegerSerializerDeserializer.INSTANCE,
@@ -103,10 +92,8 @@ public final class KMeansLoopIO {
 
     /**
      * Lloyd loop, Controller -&gt; CentroidMerge:
-     * {@code {iter:int, part:int, seq:int, kind:int, count:double, sum:rawDoubles}}, where {@code seq} is the
-     * centroid index the partial belongs to and {@code count}/{@code sum} are that centroid's local member count
-     * and component-wise sum. {@link #KIND_END} markers close a partition's contribution for one iteration and
-     * carry no payload. Distinct from {@link #DRAW_RD} only by the extra {@code count} column.
+     * {@code {iter:int, part:int, seq:int, kind:int, count:double, sum:rawDoubles}}: centroid {@code seq}'s local
+     * member count and component-wise sum. {@link #KIND_END} closes a partition's iteration, no payload.
      */
     public static final RecordDescriptor PARTIAL_RD =
             new RecordDescriptor(new ISerializerDeserializer[] { IntegerSerializerDeserializer.INSTANCE,
@@ -120,31 +107,24 @@ public final class KMeansLoopIO {
 
     /**
      * RECLUSTER's internal weigh-partial layout: {@code {seq:int, part:int, count:double, sum:rawDoubles}}.
-     * <p>
-     * The partials cross the logical operator boundary packed into a single field, because
-     * {@code KMeansStageOperator} declares one output variable and the record descriptor for that edge is
-     * therefore single-field. Hyracks' external sort keys on <em>tuple fields</em>, so it cannot sort that
-     * packed form. RECLUSTER re-emits each partial in this flat shape into a sort it owns; the layout never
-     * leaves the operator, so widening it costs nothing elsewhere.
+     * The external sort keys on tuple fields, so it cannot sort the packed single-field form the operator
+     * edge carries; RECLUSTER therefore re-emits partials in this flat shape for a sort it owns.
      */
     public static final RecordDescriptor PARTIAL_FLAT_RD =
             new RecordDescriptor(new ISerializerDeserializer[] { IntegerSerializerDeserializer.INSTANCE,
                     IntegerSerializerDeserializer.INSTANCE, DoubleSerializerDeserializer.INSTANCE,
                     DoubleSerializerDeserializer.INSTANCE /* placeholder: raw double[] read by offset */ });
 
-    /** Sort keys for {@link #PARTIAL_RD}: (seq, part) — the order MERGE_ORDER imposes in CentroidMerge. */
+    /** Sort keys for {@link #PARTIAL_RD}: (seq, part) — by centroid, then by partition, never by arrival. */
     public static final int[] PARTIAL_SORT_FIELDS = { 2, 1 };
 
     public static final IBinaryComparatorFactory[] PARTIAL_SORT_COMPARATORS =
             { IntegerBinaryComparatorFactory.INSTANCE, IntegerBinaryComparatorFactory.INSTANCE };
 
     /**
-     * Sort keys for {@link #DRAW_RD}: (seq, part) — the order PoolMerge emits a round in, where {@code seq} is
-     * the drawing Sample's content hash of the vector rather than a positional counter. Ordering on content
-     * first makes the pool's layout -- and so every candidate's index, which RECLUSTER picks by -- a property
-     * of the drawn set alone, not of the order rows were read in or of which partition drew them. {@code part}
-     * only breaks ties between equal hashes, which are duplicate vectors or (vanishingly) a truncation clash;
-     * either way the candidates it separates are interchangeable.
+     * Sort keys for {@link #DRAW_RD}: (seq, part), where {@code seq} is the drawing Sample's content hash of
+     * the vector. Content-first ordering makes the pool layout a property of the drawn set alone, and
+     * {@code part} only breaks ties between equal hashes, whose candidates are interchangeable.
      */
     public static final int[] DRAW_SORT_FIELDS = { 2, 1 };
 
@@ -216,11 +196,9 @@ public final class KMeansLoopIO {
     }
 
     /**
-     * Hashes the contents of a vector into 64 bits. Two vectors with the same components get the same hash
-     * no matter which partition or position they are stored at. {@link #uniformDraw} uses this hash as the
-     * source of randomness so that a draw does not depend on the partition layout.
-     * <p>
-     * Hashes the bit pattern of each component ({@link Double#doubleToLongBits}) rather than its value.
+     * Hashes the contents of a vector into 64 bits, over each component's bit pattern
+     * ({@link Double#doubleToLongBits}). Equal vectors hash equally on any partition or position, so
+     * {@link #uniformDraw} can use the hash as randomness that is independent of the partition layout.
      */
     public static long fingerprint(double[] v) {
         long h = mix64(0x9E3779B97F4A7C15L ^ v.length);
@@ -326,9 +304,8 @@ public final class KMeansLoopIO {
     }
 
     /**
-     * Sequential reader over a {@link ScoreColumnWriter} column, advanced one entry per vector. Running off the
-     * end means the column and the vector run file disagree on length, which would silently mis-pair scores with
-     * vectors, so it is raised rather than tolerated.
+     * Sequential reader over a {@link ScoreColumnWriter} column, advanced one entry per vector. Running off
+     * the end means the column and the vector run file disagree on length, a broken invariant, and raises.
      */
     public static final class ScoreColumnReader implements AutoCloseable {
         private final FrameTupleAccessor accessor = new FrameTupleAccessor(SCORE_RD);
@@ -416,8 +393,7 @@ public final class KMeansLoopIO {
      * it the heap holds one frame and reads stream.
      * <p>
      * Append-then-read: every vector is added before the first read. Reads are sequential
-     * ({@link #stream}) except for fetching the one vector a round just picked ({@link #get}), which is a
-     * scan with an early exit rather than random access.
+     * ({@link #stream}); {@link #get} fetches one just-picked vector by scanning with an early exit.
      */
     public static final class VectorList implements RawVectorSource, AutoCloseable {
         private final IHyracksTaskContext ctx;
@@ -551,9 +527,8 @@ public final class KMeansLoopIO {
      * Reduces vectors onto {@code slotCount} accumulator slots while holding at most {@code window} of them.
      * <p>
      * A slot is written at whichever index a vector proved nearest to, so the writes are random and there is
-     * no side to stream. Taking the assignment from a precomputed score column instead lets the slot range be
-     * swept: each pass admits only the vectors whose nearest index falls in the current window, costing one
-     * sequential read and holding {@code window} sums rather than {@code slotCount} of them.
+     * no side to stream. The precomputed score column lets the slot range be swept: each pass admits only the
+     * vectors whose nearest index falls in the current window, one sequential read, {@code window} sums held.
      * <p>
      * The window is a memory bound, not a semantic one. Slots reach the sink in ascending index order and each
      * sums its vectors in run-file order, so the sums are identical bit for bit at any window; a window of at
@@ -591,7 +566,13 @@ public final class KMeansLoopIO {
                         sum = new double[vec.length];
                         sums[slot] = sum;
                     }
-                    for (int d = 0; d < Math.min(sum.length, vec.length); d++) {
+                    if (vec.length != sum.length) {
+                        // Every vector was decoded at the declared dimension, so a mismatch here is a corrupt
+                        // frame; summing a prefix would be a silently wrong centroid.
+                        throw new RuntimeDataException(ErrorCode.ILLEGAL_STATE,
+                                "a vector is " + vec.length + " wide where its accumulator is " + sum.length);
+                    }
+                    for (int d = 0; d < sum.length; d++) {
                         sum[d] += vec[d];
                     }
                 });
@@ -604,6 +585,26 @@ public final class KMeansLoopIO {
         }
     }
 
+    /** The distance a stage measures with, built the way the vector index builds its own. */
+    public static IVTreeDistanceFunction distanceFunction(VectorSimilarityMetric metric) throws HyracksDataException {
+        return new VectorDistanceFunctionFactory(metric).createDistanceFunction();
+    }
+
+    /**
+     * The centroid of a cluster whose members sum to {@code sum}: for squared Euclidean, the arithmetic mean,
+     * the point minimizing total distance to the members.
+     *
+     * @param sum    component-wise sum of the cluster's members; not modified
+     * @param weight how many members it holds, at least one
+     */
+    public static double[] centroidOf(double[] sum, long weight, VectorSimilarityMetric metric) {
+        double[] centroid = new double[sum.length];
+        for (int d = 0; d < centroid.length; d++) {
+            centroid[d] = sum[d] / weight;
+        }
+        return centroid;
+    }
+
     /** Receives one finished block of {@link #streamScoredAgainstPool}: the vectors and their nearest pool member. */
     @FunctionalInterface
     public interface ScoredBlockConsumer {
@@ -612,33 +613,25 @@ public final class KMeansLoopIO {
     }
 
     /**
-     * Scores every resident vector against the candidate pool without ever holding the pool in the heap.
+     * Scores every resident vector against the candidate pool without holding the pool in the heap: a block
+     * of vectors is held with a running nearest distance per slot, the pool streams past it, and the block's
+     * minima are final once the pool is exhausted. The heap is bounded by the frame budget, at the price of
+     * {@code ceil(N / B)} sequential passes over the pool; the distance-computation count is unchanged.
      * <p>
-     * The obvious shape -- pool resident, vectors streamed -- makes the heap grow with {@code k}, since the pool
-     * is {@code 2 * k} members per round. This inverts it: a block of vectors is held with a running nearest
-     * distance per slot, the whole pool is streamed past the block, and when the pool is exhausted the block's
-     * minima are final. The heap is then bounded by the frame budget instead of by {@code k}, and the pool is
-     * read one frame at a time. The price is {@code ceil(N / B)} sequential passes over the pool, which is the
-     * small side; the number of distance computations is unchanged.
-     * <p>
-     * Order is preserved exactly, which is what lets this be swapped in under existing results: vectors reach the
-     * sink in run-file order (blocks in order, and in order within a block), the pool is streamed in run-file
-     * order so a strict {@code <} still resolves ties to the first pool member, and therefore any summation the
-     * sink performs adds its terms in the same sequence as the resident form did. The output is bit-identical at
-     * every block size.
+     * Order is exact: vectors reach the sink in run-file order, the pool streams in run-file order, and a
+     * strict {@code <} resolves ties to the first pool member, so the output is bit-identical at every block
+     * size.
      */
     public static void streamScoredAgainstPool(MaterializerTaskState vectorState, MaterializerTaskState poolState,
-            IHyracksTaskContext ctx, int framesLimit, ScoredBlockConsumer sink) throws HyracksDataException {
-        streamScoredAgainstPool(source(vectorState, ctx), source(poolState, ctx), ctx, framesLimit, sink);
+            IHyracksTaskContext ctx, int framesLimit, IVTreeDistanceFunction distanceFn, ScoredBlockConsumer sink)
+            throws HyracksDataException {
+        streamScoredAgainstPool(source(vectorState, ctx), source(poolState, ctx), ctx, framesLimit, distanceFn, sink);
     }
 
-    /**
-     * As above, over any replayable sources. The Lloyd loop scores against its centroid set, which is a store
-     * rather than a run file, but the shape -- and the reason for inverting the residency -- is the same.
-     */
+    /** As above, over any replayable sources; the Lloyd loop passes its centroid store as the pool. */
     public static void streamScoredAgainstPool(RawVectorSource vectors, RawVectorSource pool, IHyracksTaskContext ctx,
-            int framesLimit, ScoredBlockConsumer sink) throws HyracksDataException {
-        BlockScan scan = new BlockScan(pool, ctx, framesLimit, sink);
+            int framesLimit, IVTreeDistanceFunction distanceFn, ScoredBlockConsumer sink) throws HyracksDataException {
+        BlockScan scan = new BlockScan(pool, ctx, framesLimit, distanceFn, sink);
         vectors.stream(scan::add);
         scan.flush(); // the final short block
     }
@@ -648,16 +641,19 @@ public final class KMeansLoopIO {
         private final RawVectorSource pool;
         private final IHyracksTaskContext ctx;
         private final int framesLimit;
+        private final IVTreeDistanceFunction distanceFn;
         private final ScoredBlockConsumer sink;
         private double[][] block;
         private double[] nearest;
         private int[] nearestIndex;
         private int count;
 
-        private BlockScan(RawVectorSource pool, IHyracksTaskContext ctx, int framesLimit, ScoredBlockConsumer sink) {
+        private BlockScan(RawVectorSource pool, IHyracksTaskContext ctx, int framesLimit,
+                IVTreeDistanceFunction distanceFn, ScoredBlockConsumer sink) {
             this.pool = pool;
             this.ctx = ctx;
             this.framesLimit = framesLimit;
+            this.distanceFn = distanceFn;
             this.sink = sink;
         }
 
@@ -689,7 +685,7 @@ public final class KMeansLoopIO {
             pool.stream(candidate -> {
                 int c = poolIndex[0]++;
                 for (int i = 0; i < n; i++) {
-                    double d = VectorDistanceCalculation.euclideanSquared(block[i], candidate);
+                    double d = distanceFn.apply(block[i], candidate);
                     // Strict <: ties resolve to the first pool member, as in the resident form.
                     if (d < nearest[i]) {
                         nearest[i] = d;
@@ -707,19 +703,12 @@ public final class KMeansLoopIO {
     private static final int PER_VECTOR_OVERHEAD = 16 + 8 + Double.BYTES + Integer.BYTES;
 
     /**
-     * How many vectors fit the block budget. Counts what a slot actually costs on the heap -- the doubles, the
-     * array header and reference, and the two per-slot scoring scalars -- so a low-dimension input cannot turn
-     * the budget into millions of tiny arrays. At least one, so any width makes progress.
+     * How many vectors fit the block budget, counting a slot's full heap cost (doubles, array header and
+     * reference, the two per-slot scoring scalars). At least one, so any width makes progress.
      */
     public static int blockCapacity(IHyracksTaskContext ctx, int framesLimit, int dim) {
         long perVector = (long) dim * Double.BYTES + PER_VECTOR_OVERHEAD;
         long capacity = (long) framesLimit * ctx.getInitialFrameSize() / perVector;
         return (int) Math.max(1L, Math.min(capacity, Integer.MAX_VALUE));
-    }
-
-    /** Appends one raw-double vector as a {@link #POOL_RD} tuple into {@code appender} (caller flushes frames). */
-    public static void appendPoolVector(ArrayTupleBuilder tb, double[] vec) throws HyracksDataException {
-        tb.reset();
-        writeRawVector(tb, vec);
     }
 }

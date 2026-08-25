@@ -22,6 +22,7 @@ import java.nio.ByteBuffer;
 
 import org.apache.asterix.common.exceptions.ErrorCode;
 import org.apache.asterix.common.exceptions.RuntimeDataException;
+import org.apache.asterix.common.vector.VectorSimilarityMetric;
 import org.apache.hyracks.api.comm.IFrameWriter;
 import org.apache.hyracks.api.comm.VSizeFrame;
 import org.apache.hyracks.api.context.IHyracksTaskContext;
@@ -68,14 +69,13 @@ import org.apache.hyracks.util.annotations.AiProvenance;
  * pool and emits it as {@link KMeansVectorCodec.PoolEnvelopeWriter KIND_POOL envelopes} on <b>output 0</b>.
  * Output 0 is idle during the loop, so the blocking consumer cannot back-pressure the iteration.</li>
  * </ul>
- * The loop is acyclic in the job graph — Release's feedback to CostLoop is the shared permit + pool run file, not
- * a data edge. The sampling itself is unchanged by this arrangement — the per-round/per-partition seed lives in
- * Sample, so the draws depend only on the data. Single-node vs multi-node is irrelevant here — this
- * sub-graph works on any topology (the co-located Op1/Op3/Op5 share an NC's joblet state; the merges
- * are single-node).
+ * The loop is acyclic in the job graph, since Release's feedback to CostLoop is the shared permit plus the
+ * pool run file and not a data edge. The per-round seed lives in Sample, so the draws depend only on the
+ * data. The sub-graph works on any topology: the co-located Op1/Op3/Op5 share an NC's joblet state, and the
+ * merges are single-node.
  */
 @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
-@AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "Declared dimension threaded to the vector/seed decoder")
+@AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
 public class KMeansCostControllerOperatorDescriptor extends AbstractOperatorDescriptor {
     private static final long serialVersionUID = 1L;
 
@@ -93,10 +93,13 @@ public class KMeansCostControllerOperatorDescriptor extends AbstractOperatorDesc
     private final int framesLimit; // block budget for the bounded scans
     // The declared Dimension, enforced by the decoder (see KMeansVectorCodec.ListVectorDecoder).
     private final int dimension;
+    // The metric every distance in this stage is measured with. Validation refuses the metrics with no usable
+    // centroid update, so only ones the algorithm can converge under reach here.
+    private final VectorSimilarityMetric metric;
 
     public KMeansCostControllerOperatorDescriptor(IOperatorDescriptorRegistry spec,
             RecordDescriptor poolEnvelopeRecDesc, RecordDescriptor sigmaRecDesc, String loopKey, int vectorColumn,
-            int seedColumn, int loopRounds, int framesLimit, int dimension) {
+            int seedColumn, int loopRounds, int framesLimit, int dimension, VectorSimilarityMetric metric) {
         super(spec, 2, 2);
         this.loopKey = loopKey;
         this.vectorColumn = vectorColumn;
@@ -104,6 +107,7 @@ public class KMeansCostControllerOperatorDescriptor extends AbstractOperatorDesc
         this.loopRounds = loopRounds;
         this.framesLimit = framesLimit;
         this.dimension = dimension;
+        this.metric = metric;
         outRecDescs[OUT_POOL] = poolEnvelopeRecDesc;
         outRecDescs[OUT_SIGMA] = sigmaRecDesc;
     }
@@ -311,12 +315,13 @@ public class KMeansCostControllerOperatorDescriptor extends AbstractOperatorDesc
                     FrameTupleAppender sigmaAppender = new FrameTupleAppender(new VSizeFrame(ctx));
                     ArrayTupleBuilder tb = new ArrayTupleBuilder(3);
                     MaterializerTaskState scoreState = null;
-                    // An empty pool[0] means the drawn seed did not decode: the draw filters on shape alone, and
-                    // its ORDER BY <key> LIMIT 1 has already discarded the rows that would have decoded. Scoring
-                    // then leaves every vector at +INF, so phi = 0, nothing is drawn, and a usable input answers
-                    // nothing. Identical on every partition: the seed is broadcast, later pools are Release's.
+                    // An empty pool[0] means the drawn seed did not decode, since the draw filters on shape
+                    // alone. Scoring would then leave every vector at +INF and phi at 0, so a usable input
+                    // would answer nothing.
                     boolean poolEmpty = isEmpty(poolState);
-                    if (poolEmpty && ctx.getWarningCollector().shouldWarn()) {
+                    // Silent when the vectors are empty too, where the labelling stage already reports that
+                    // fact once.
+                    if (poolEmpty && !isEmpty(vectorState) && ctx.getWarningCollector().shouldWarn()) {
                         ctx.getWarningCollector()
                                 .warn(Warning.of(null, ErrorCode.CLUSTER_BY_INVALID_INPUT,
                                         "the CLUSTER BY seed was not a numeric array of the declared dimension; the "
@@ -336,16 +341,14 @@ public class KMeansCostControllerOperatorDescriptor extends AbstractOperatorDesc
                             final KMeansLoopIO.ScoreColumnWriter column =
                                     new KMeansLoopIO.ScoreColumnWriter(scoreState, ctx);
                             final double[] localSum = { 0.0d };
-                            // Nothing to measure against: score every vector 1 rather than +INF, so phi is the
-                            // vector count and Op3's l * 1 / phi draws l of them uniformly -- from vectors the
-                            // decoder already accepted, so this draw cannot fail the way the seed did. Re-tested
-                            // every round, not just the first: a uniform round can draw nothing (about e^-l).
+                            // Bootstrap: score every vector 1, so phi is the vector count and Op3 draws l of
+                            // them uniformly from decoder-accepted vectors. Re-tested every round, since a
+                            // uniform round can draw nothing (about e^-l).
                             final boolean bootstrapRound = poolEmpty;
-                            // Blocked against pool[r] rather than holding it: the pool is 2*k per round, so the
-                            // resident form grew with the requested cluster count. Vectors still reach the sink in
-                            // run-file order, so localSum adds its terms in the same order as before.
+                            // Blocked against pool[r], which stays on disk. Vectors reach the sink in run-file
+                            // order, so localSum adds its terms in a fixed order.
                             KMeansLoopIO.streamScoredAgainstPool(vectorState, poolState, ctx, framesLimit,
-                                    (vecs, n, nearest, nearestIdx) -> {
+                                    KMeansLoopIO.distanceFunction(metric), (vecs, n, nearest, nearestIdx) -> {
                                         for (int i = 0; i < n; i++) {
                                             if (bootstrapRound) {
                                                 // The column is built from this array: Op3 reads the same 1.
@@ -409,14 +412,13 @@ public class KMeansCostControllerOperatorDescriptor extends AbstractOperatorDesc
                  * index back is what makes that affordable: recomputing it on each sweep would multiply the
                  * distance work by the number of windows, which is itself proportional to the pool.
                  * <p>
-                 * The window is sized from the memory budget, so a pool that already fits is covered in a single
-                 * sweep and does exactly what it did before; only a k large enough to overflow the budget pays
-                 * for extra sweeps over the vectors. Large k becomes slow rather than fatal.
+                 * The window is sized from the memory budget, so a pool that fits is covered in a single
+                 * sweep. A k large enough to overflow the budget pays extra sweeps over the vectors and stays
+                 * within memory.
                  */
                 private void emitWeighPartials(MaterializerTaskState poolState, MaterializerTaskState vectorState,
                         IFrameWriter poolWriter) throws HyracksDataException {
-                    // How many slots there are, and how wide a vector is -- both read off the pool in one cheap
-                    // sequential pass, rather than by keeping every candidate resident.
+                    // Slot count and vector width, both read off the pool in one cheap sequential pass.
                     final int[] poolSize = { 0 };
                     final int[] dimension = { 0 };
                     KMeansLoopIO.streamRawVectors(poolState, ctx, member -> {
@@ -428,8 +430,8 @@ public class KMeansCostControllerOperatorDescriptor extends AbstractOperatorDesc
 
                     KMeansVectorCodec.PoolEnvelopeWriter envelope =
                             new KMeansVectorCodec.PoolEnvelopeWriter(ctx, poolWriter);
-                    // Pool echo (partition 0 only — the pool is broadcast-complete on every partition), then this
-                    // partition's non-empty partials.
+                    // Pool echo on partition 0 only, since the pool is broadcast-complete everywhere; then
+                    // this partition's non-empty partials.
                     if (partition == 0) {
                         final int[] echoIdx = { 0 };
                         KMeansLoopIO.streamRawVectors(poolState, ctx,
@@ -448,12 +450,12 @@ public class KMeansCostControllerOperatorDescriptor extends AbstractOperatorDesc
                         final KMeansLoopIO.ScoreColumnWriter column =
                                 new KMeansLoopIO.ScoreColumnWriter(weighColumn, ctx);
                         KMeansLoopIO.streamScoredAgainstPool(vectorState, poolState, ctx, framesLimit,
+                                KMeansLoopIO.distanceFunction(metric),
                                 (vecs, n, nearest, nearestIdx) -> column.append(nearest, nearestIdx, n));
                         column.finish();
 
-                        // Pass B: sweep the slot range. The window is sized the same way the scan's block is --
-                        // a slot costs a sum vector plus its header, reference and count -- so a pool small
-                        // enough for the budget is covered in a single sweep.
+                        // Pass B: sweep the slot range with a budget-sized window, so a pool small enough
+                        // for the budget is covered in a single sweep.
                         int window = KMeansLoopIO.blockCapacity(ctx, framesLimit, dimension[0]);
                         KMeansLoopIO.accumulateInWindows(vectorState, weighColumn, ctx, poolSize[0], window,
                                 (index, count, sum) -> envelope.envelope(KMeansVectorCodec.KIND_PARTIAL, partition,
@@ -471,4 +473,5 @@ public class KMeansCostControllerOperatorDescriptor extends AbstractOperatorDesc
             };
         }
     }
+
 }

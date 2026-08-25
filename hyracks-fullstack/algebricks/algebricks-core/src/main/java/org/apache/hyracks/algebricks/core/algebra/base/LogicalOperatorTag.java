@@ -57,6 +57,7 @@ public enum LogicalOperatorTag {
     WRITE,
     WRITE_RESULT,
     INTERSECT,
+    CLUSTER_BY,
     KMEANS_STAGE,
     WINDOW
 }

@@ -33,6 +33,7 @@ import org.apache.hyracks.algebricks.core.algebra.base.LogicalVariable;
 import org.apache.hyracks.algebricks.core.algebra.expressions.VariableReferenceExpression;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AggregateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AssignOperator;
+import org.apache.hyracks.algebricks.core.algebra.operators.logical.ClusterByOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DataSourceScanOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DelegateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DistinctOperator;
@@ -236,6 +237,14 @@ public class SchemaVariableVisitor implements ILogicalOperatorVisitor<Void, Void
         // Produced variables only: the operator consumes its input tuples and emits one new column, which is
         // what recomputeSchema and the propagation policy both say. standardLayout would additionally report
         // the inputs' live variables, which are gone by then. Same shape as visitAggregateOperator.
+        VariableUtilities.getProducedVariables(op, schemaVariables);
+        return null;
+    }
+
+    @Override
+    public Void visitClusterByOperator(ClusterByOperator op, Void arg) throws AlgebricksException {
+        // Produced variables only: the operator consumes its input tuples and emits one new column, which is
+        // what recomputeSchema and the propagation policy both say. Same shape as visitAggregateOperator.
         VariableUtilities.getProducedVariables(op, schemaVariables);
         return null;
     }

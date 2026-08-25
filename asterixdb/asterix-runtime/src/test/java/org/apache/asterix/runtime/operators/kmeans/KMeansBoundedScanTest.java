@@ -30,6 +30,7 @@ import org.apache.hyracks.api.job.JobId;
 import org.apache.hyracks.dataflow.common.comm.io.ArrayTupleBuilder;
 import org.apache.hyracks.dataflow.common.comm.io.FrameTupleAppender;
 import org.apache.hyracks.dataflow.std.misc.MaterializerTaskState;
+import org.apache.hyracks.storage.am.vector.api.IVTreeDistanceFunction;
 import org.apache.hyracks.test.support.TestUtils;
 import org.junit.Assert;
 import org.junit.Test;
@@ -45,6 +46,8 @@ import org.junit.Test;
  * with the frame budget and the same query would answer differently on differently-configured clusters.
  */
 public class KMeansBoundedScanTest {
+    /** These tests pin the scan's mechanics, not a metric; squared Euclidean is what the feature defaults to. */
+    private static final IVTreeDistanceFunction EUCLIDEAN_SQUARED = VectorDistanceCalculation::euclideanSquared;
 
     private static final int FRAME_SIZE = 32768;
 
@@ -187,7 +190,7 @@ public class KMeansBoundedScanTest {
         MaterializerTaskState poolState = materialize(ctx, pool, 2);
         List<Scored> out = new ArrayList<>();
         try {
-            KMeansLoopIO.streamScoredAgainstPool(vectorState, poolState, ctx, framesLimit,
+            KMeansLoopIO.streamScoredAgainstPool(vectorState, poolState, ctx, framesLimit, EUCLIDEAN_SQUARED,
                     (vecs, n, nearest, nearestIdx) -> {
                         for (int i = 0; i < n; i++) {
                             out.add(new Scored(vecs[i].clone(), nearest[i], nearestIdx[i]));

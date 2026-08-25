@@ -16,12 +16,13 @@
  * specific language governing permissions and limitations
  * under the License.
  */
--- CLUSTER BY over an input whose parallelism differs from the loop's. A global LIMIT collapses its input to
--- one partition, while the k-means loop stages are pinned to one instance per compute partition. The physical
--- operator therefore requires a partitioning over the computation node domain on its vector input, and the
--- property enforcer answers with a repartition -- so this plan must contain a RANDOM_PARTITION_EXCHANGE.
--- Without that requirement the two are joined one-to-one and the connector addresses a producer partition
--- that does not exist, failing the job.
+-- CLUSTER BY over an unpartitioned input. A global LIMIT collapses its input to one partition, and the
+-- stages follow it, as GROUP BY would: one loop instance where the rows already are, no repartition. So this
+-- plan must contain NO RANDOM_PARTITION_EXCHANGE and NO HASH_PARTITION_EXCHANGE, since the stages, the group-by
+-- and the result all stay unpartitioned. Repartitioning instead sent the rows through the unseeded random
+-- exchange (the clustering then varied run to run), left the operators above the clause with a stale
+-- unpartitioned mode (an ORDER BY over the clusters was dropped as already satisfied), and evaluated the
+-- subquery once per stage copy.
 drop dataverse clusterby_test if exists;
 create dataverse clusterby_test;
 use clusterby_test;

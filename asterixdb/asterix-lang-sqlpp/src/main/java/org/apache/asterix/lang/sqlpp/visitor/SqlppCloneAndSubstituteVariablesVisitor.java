@@ -31,6 +31,7 @@ import org.apache.asterix.lang.common.clause.GroupbyClause;
 import org.apache.asterix.lang.common.clause.LetClause;
 import org.apache.asterix.lang.common.clause.LimitClause;
 import org.apache.asterix.lang.common.clause.OrderbyClause;
+import org.apache.asterix.lang.common.expression.GbyVariableExpressionPair;
 import org.apache.asterix.lang.common.expression.RecordConstructor;
 import org.apache.asterix.lang.common.expression.VariableExpr;
 import org.apache.asterix.lang.common.rewrites.LangRewritingContext;
@@ -251,15 +252,21 @@ public class SqlppCloneAndSubstituteVariablesVisitor extends CloneAndSubstituteV
             }
         }
 
+        Pair<ILangExpression, VariableSubstitutionEnvironment> newClusterby = null;
+        if (selectBlock.hasClusterbyClause()) {
+            // Before the SELECT, which reads the variables the clause binds.
+            newClusterby = selectBlock.getClusterbyClause().accept(this, currentEnv);
+            currentEnv = newClusterby.second;
+        }
+
         newSelect = selectBlock.getSelectClause().accept(this, currentEnv);
         currentEnv = newSelect.second;
         FromClause fromClause = newFrom == null ? null : (FromClause) newFrom.first;
         GroupbyClause groupbyClause = newGroupby == null ? null : (GroupbyClause) newGroupby.first;
         SelectBlock newSelectBlock = new SelectBlock((SelectClause) newSelect.first, fromClause, newLetWhereClauses,
                 groupbyClause, newLetHavingClausesAfterGby);
-        if (selectBlock.hasClusterbyClause()) {
-            newSelectBlock.setClusterbyClause(
-                    (ClusterbyClause) selectBlock.getClusterbyClause().accept(this, currentEnv).first);
+        if (newClusterby != null) {
+            newSelectBlock.setClusterbyClause((ClusterbyClause) newClusterby.first);
         }
         newSelectBlock.setSourceLocation(selectBlock.getSourceLocation());
         return new Pair<>(newSelectBlock, currentEnv);
@@ -269,10 +276,13 @@ public class SqlppCloneAndSubstituteVariablesVisitor extends CloneAndSubstituteV
     public Pair<ILangExpression, VariableSubstitutionEnvironment> visit(ClusterbyClause cc,
             VariableSubstitutionEnvironment env) throws CompilationException {
         Expression newExpr = (Expression) cc.getClusteringExpression().accept(this, env).first;
+        // The clause binds variables the rest of the block reads: the descriptor and members the user named,
+        // and the output variables the rewrite resolved the descriptor's fields to. All are renamed here and
+        // the renames are returned, so the SELECT cloned after this clause follows them.
+        VariableSubstitutionEnvironment newEnv = new VariableSubstitutionEnvironment(env);
         VariableExpr newDescVar =
-                cc.hasClusterDescriptorVar() ? generateNewVariable(context, cc.getClusterDescriptorVar()) : null;
-        VariableExpr newMembersVar =
-                cc.hasClusterMembersVar() ? generateNewVariable(context, cc.getClusterMembersVar()) : null;
+                cc.hasClusterDescriptorVar() ? renameBound(cc.getClusterDescriptorVar(), newEnv) : null;
+        VariableExpr newMembersVar = cc.hasClusterMembersVar() ? renameBound(cc.getClusterMembersVar(), newEnv) : null;
         List<Pair<Expression, Identifier>> newClusterFieldList = cc.hasClusterFieldList()
                 ? VariableCloneAndSubstitutionUtil.substInFieldList(cc.getClusterFieldList(), env, this) : null;
         RecordConstructor newWith =
@@ -280,7 +290,31 @@ public class SqlppCloneAndSubstituteVariablesVisitor extends CloneAndSubstituteV
         ClusterbyClause newClusterbyClause =
                 new ClusterbyClause(newExpr, newDescVar, newMembersVar, newClusterFieldList, newWith);
         newClusterbyClause.setSourceLocation(cc.getSourceLocation());
-        return new Pair<>(newClusterbyClause, env);
+        // The resolved state survives the clone: a view or function body is rewritten once, then inlined.
+        // Shared by reference: the holder is immutable.
+        newClusterbyClause.setResolvedOptions(cc.getResolvedOptions());
+        if (cc.hasDecorList()) {
+            // The expression reads the variable before the clause; the decoration binds it after it.
+            List<GbyVariableExpressionPair> decorList = new ArrayList<>();
+            for (GbyVariableExpressionPair pair : cc.getDecorPairList()) {
+                Expression newDecorExpr = (Expression) pair.getExpr().accept(this, env).first;
+                decorList.add(new GbyVariableExpressionPair(renameBound(pair.getVar(), newEnv), newDecorExpr));
+            }
+            newClusterbyClause.setDecorPairList(decorList);
+        }
+        if (cc.getClusterIdVar() != null) {
+            newClusterbyClause.setClusterIdVar(renameBound(cc.getClusterIdVar(), newEnv));
+        }
+        if (cc.getCentroidVar() != null) {
+            newClusterbyClause.setCentroidVar(renameBound(cc.getCentroidVar(), newEnv));
+        }
+        return new Pair<>(newClusterbyClause, newEnv);
+    }
+
+    private VariableExpr renameBound(VariableExpr var, VariableSubstitutionEnvironment env) {
+        VariableExpr renamed = generateNewVariable(context, var);
+        env.addSubstituion(var, renamed);
+        return renamed;
     }
 
     @Override

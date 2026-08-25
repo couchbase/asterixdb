@@ -293,8 +293,11 @@ public class AbstractSqlppExpressionScopingVisitor extends AbstractSqlppSimpleEx
                 memberField.first = visit(memberField.first, cc);
             }
         }
-        // After CLUSTER BY, the pre-cluster bindings are replaced by the descriptor (sc) and members (rvc) variables;
-        // variables defined before the current SELECT BLOCK (e.g., a WITH clause or outer scope) remain visible.
+        // The decorations read the pre-cluster scope too.
+        visitDecorations(cc, cc);
+        // After the clause the block's own bindings are gone, as after a GROUP BY: the new scope descends
+        // from the scope preceding the SELECT block, so a FROM or LET variable read after the clause fails
+        // name resolution. A SQL-92 aggregate's arguments are mapped through the cluster field list.
         Scope newScope = new Scope(scopeChecker, scopeChecker.getPrecedingScope());
         if (cc.hasClusterDescriptorVar()) {
             VariableExpr descriptorVar = cc.getClusterDescriptorVar();
@@ -303,6 +306,19 @@ public class AbstractSqlppExpressionScopingVisitor extends AbstractSqlppSimpleEx
         if (cc.hasClusterMembersVar()) {
             VariableExpr membersVar = cc.getClusterMembersVar();
             addNewVarSymbolToScope(newScope, membersVar.getVar(), membersVar.getSourceLocation());
+        }
+        // The operator's variables, null before the rewrite has named them.
+        for (VariableExpr produced : new VariableExpr[] { cc.getClusterIdVar(), cc.getCentroidVar() }) {
+            if (produced != null) {
+                addNewVarSymbolToScope(newScope, produced.getVar(), produced.getSourceLocation());
+            }
+        }
+        // A decoration binds its variable again after the clause.
+        if (cc.hasDecorList()) {
+            for (GbyVariableExpressionPair decorPair : cc.getDecorPairList()) {
+                VariableExpr decorVar = decorPair.getVar();
+                addNewVarSymbolToScope(newScope, decorVar.getVar(), decorVar.getSourceLocation());
+            }
         }
         scopeChecker.replaceCurrentScope(newScope);
         return null;

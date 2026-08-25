@@ -21,6 +21,7 @@ package org.apache.hyracks.algebricks.core.algebra.visitors;
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AggregateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AssignOperator;
+import org.apache.hyracks.algebricks.core.algebra.operators.logical.ClusterByOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DataSourceScanOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DelegateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DistinctOperator;
@@ -102,6 +103,8 @@ public interface ILogicalOperatorVisitor<R, T> {
     public R visitUnionOperator(UnionAllOperator op, T arg) throws AlgebricksException;
 
     public R visitIntersectOperator(IntersectOperator op, T arg) throws AlgebricksException;
+
+    public R visitClusterByOperator(ClusterByOperator op, T arg) throws AlgebricksException;
 
     public R visitKMeansStageOperator(KMeansStageOperator op, T arg) throws AlgebricksException;
 

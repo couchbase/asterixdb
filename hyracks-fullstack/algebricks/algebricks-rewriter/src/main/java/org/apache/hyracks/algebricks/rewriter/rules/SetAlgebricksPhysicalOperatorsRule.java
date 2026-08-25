@@ -45,6 +45,7 @@ import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractLogi
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractOperatorWithNestedPlans;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AggregateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AssignOperator;
+import org.apache.hyracks.algebricks.core.algebra.operators.logical.ClusterByOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DataSourceScanOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DelegateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DistinctOperator;
@@ -383,6 +384,13 @@ public class SetAlgebricksPhysicalOperatorsRule implements IAlgebraicRewriteRule
 
         @Override
         public IPhysicalOperator visitKMeansStageOperator(KMeansStageOperator op, Boolean topLevelOp)
+                throws AlgebricksException {
+            // Realized by the Asterix-level physical rule (the runtime descriptor lives in asterix-runtime).
+            throw new NotImplementedException("kmeans-stage is not supported at the algebricks level");
+        }
+
+        @Override
+        public IPhysicalOperator visitClusterByOperator(ClusterByOperator op, Boolean topLevelOp)
                 throws AlgebricksException {
             // Realized by the Asterix-level physical rule (the runtime descriptor lives in asterix-runtime).
             throw new NotImplementedException("kmeans-stage is not supported at the algebricks level");

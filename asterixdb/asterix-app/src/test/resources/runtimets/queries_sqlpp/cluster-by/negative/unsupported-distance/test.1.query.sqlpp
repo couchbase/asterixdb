@@ -17,8 +17,9 @@
  * under the License.
  */
 
-// cosine is a recognized vector-distance metric but has no matching centroid update for k-means yet,
-// so CLUSTER BY rejects it rather than silently clustering with Euclidean distance.
+// dot is a recognized vector-distance metric, but dot-distance is a negated inner product: unbounded below,
+// so no centroid minimizes it and k-means has nothing to converge to. Cosine, which does have a matching
+// update (the mean renormalized to unit length), is supported.
 from [{"x": [1.0, 2.0]}] as r
 cluster by r.x as sc
 with { "clustering_algorithm": "K-Means", "dimension": [2], "num_clusters": 5, "similarity": "cosine" }

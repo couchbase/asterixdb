@@ -19,6 +19,7 @@
 package org.apache.asterix.lang.sqlpp.visitor.base;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 import org.apache.asterix.common.exceptions.CompilationException;
@@ -240,7 +241,35 @@ public class AbstractSqlppSimpleExpressionVisitor
         if (cc.hasWithOptions()) {
             cc.setWithOptions((RecordConstructor) visit(cc.getWithOptions(), cc));
         }
+        visitDecorations(cc, cc);
         return null;
+    }
+
+    /**
+     * Visits the decoration expressions. A decoration carries a variable through the operator, so when a
+     * rewrite has replaced that variable by its expression (an inlined WITH) the decoration is dropped, since
+     * its reads after the clause are gone too. When a rewrite has re-resolved the variable, the decoration's
+     * own variable follows.
+     */
+    protected void visitDecorations(ClusterbyClause cc, ILangExpression arg) throws CompilationException {
+        if (!cc.hasDecorList()) {
+            return;
+        }
+        Iterator<GbyVariableExpressionPair> pairs = cc.getDecorPairList().iterator();
+        while (pairs.hasNext()) {
+            GbyVariableExpressionPair pair = pairs.next();
+            Expression newExpr = visit(pair.getExpr(), arg);
+            if (newExpr.getKind() == Expression.Kind.VARIABLE_EXPRESSION) {
+                pair.setExpr(newExpr);
+                // The decoration binds the same symbol above the operator that the expression reads below it:
+                // the reads after the clause resolve to that symbol, so the pair's variable follows its ident.
+                VariableExpr decorVar = new VariableExpr(((VariableExpr) newExpr).getVar());
+                decorVar.setSourceLocation(pair.getVar().getSourceLocation());
+                pair.setVar(decorVar);
+            } else {
+                pairs.remove();
+            }
+        }
     }
 
     @Override

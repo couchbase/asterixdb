@@ -28,6 +28,7 @@ import org.apache.hyracks.algebricks.core.algebra.base.LogicalOperatorTag;
 import org.apache.hyracks.algebricks.core.algebra.base.OperatorAnnotations;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AggregateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AssignOperator;
+import org.apache.hyracks.algebricks.core.algebra.operators.logical.ClusterByOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DataSourceScanOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DelegateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DistinctOperator;
@@ -404,6 +405,12 @@ public class EstimatedCostComputationVisitor
 
     @Override
     public EstimatedCostComputationVisitor.CardSizeCost visitKMeansStageOperator(KMeansStageOperator op, Double arg)
+            throws AlgebricksException {
+        return annotate(this, op, arg);
+    }
+
+    @Override
+    public EstimatedCostComputationVisitor.CardSizeCost visitClusterByOperator(ClusterByOperator op, Double arg)
             throws AlgebricksException {
         return annotate(this, op, arg);
     }

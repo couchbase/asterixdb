@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
+import org.apache.asterix.runtime.utils.VectorDistanceCalculation;
 import org.apache.hyracks.api.comm.VSizeFrame;
 import org.apache.hyracks.api.context.IHyracksTaskContext;
 import org.apache.hyracks.api.dataflow.ActivityId;
@@ -33,6 +34,7 @@ import org.apache.hyracks.api.job.JobId;
 import org.apache.hyracks.dataflow.common.comm.io.ArrayTupleBuilder;
 import org.apache.hyracks.dataflow.common.comm.io.FrameTupleAppender;
 import org.apache.hyracks.dataflow.std.misc.MaterializerTaskState;
+import org.apache.hyracks.storage.am.vector.api.IVTreeDistanceFunction;
 import org.apache.hyracks.test.support.TestUtils;
 import org.junit.Assert;
 import org.junit.Test;
@@ -48,6 +50,8 @@ import org.junit.Test;
  * Hyracks cancels a task that is doing pure CPU over materialized files.
  */
 public class KMeansFaultInjectionTest {
+    /** These tests pin the scan's mechanics, not a metric; squared Euclidean is what the feature defaults to. */
+    private static final IVTreeDistanceFunction EUCLIDEAN_SQUARED = VectorDistanceCalculation::euclideanSquared;
 
     private static final int FRAME_SIZE = 32768;
 
@@ -113,7 +117,7 @@ public class KMeansFaultInjectionTest {
         MaterializerTaskState pool = materialize(ctx, vectors(40, 16, 3L), 3);
         try {
             try {
-                KMeansLoopIO.streamScoredAgainstPool(vectors, pool, ctx, 1, (v, n, near, idx) -> {
+                KMeansLoopIO.streamScoredAgainstPool(vectors, pool, ctx, 1, EUCLIDEAN_SQUARED, (v, n, near, idx) -> {
                     throw new Injected();
                 });
                 Assert.fail("expected the injected failure to propagate");

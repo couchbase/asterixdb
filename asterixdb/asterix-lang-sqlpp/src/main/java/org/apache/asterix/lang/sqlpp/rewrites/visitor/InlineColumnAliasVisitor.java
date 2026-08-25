@@ -162,7 +162,9 @@ public class InlineColumnAliasVisitor extends AbstractSqlppExpressionScopingVisi
     private void introduceLetClauses(Map<Expression, VarIdentifier> letVarMap,
             Map<Expression, ColumnAliasBinding> aliasBindingMap, SelectBlock selectBlock) throws CompilationException {
 
-        List<AbstractClause> targetLetClauses = selectBlock.hasGroupbyClause()
+        // A column alias inlined into a LET lands after whatever groups the block; CLUSTER BY groups its
+        // block as GROUP BY does.
+        List<AbstractClause> targetLetClauses = selectBlock.hasGroupbyClause() || selectBlock.hasClusterbyClause()
                 ? selectBlock.getLetHavingListAfterGroupby() : selectBlock.getLetWhereList();
 
         for (Map.Entry<Expression, VarIdentifier> me : letVarMap.entrySet()) {

@@ -18,10 +18,10 @@
  */
 use test;
 
--- A global LIMIT collapses its input to one partition, while the loop stages are pinned to one instance per
--- compute partition; the plan must repartition between them. Only the invariants are asserted -- every row
--- placed exactly once, into k clusters -- because the repartition is by design unordered, so which vector
--- lands in which partition, and hence the sampling, is not fixed across runs.
+-- A global LIMIT collapses its input to one partition, and the stages follow it: one loop instance on that
+-- partition, no repartition, the group-by above it unpartitioned too. Every row placed exactly once, into k
+-- clusters. (This used to be repartitioned into the compute domain through an unseeded random exchange,
+-- which is why only invariants are asserted here: the clustering itself was not fixed across runs.)
 select count(*) as clusters, sum(cnt) as total
 from (
   from (select value p from Points p order by p.id limit 100) as t

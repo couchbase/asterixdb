@@ -23,7 +23,7 @@ import java.util.Arrays;
 import java.util.Random;
 
 import org.apache.asterix.common.exceptions.ErrorCode;
-import org.apache.asterix.runtime.utils.VectorDistanceCalculation;
+import org.apache.asterix.common.vector.VectorSimilarityMetric;
 import org.apache.hyracks.api.context.IHyracksTaskContext;
 import org.apache.hyracks.api.dataflow.ActivityId;
 import org.apache.hyracks.api.dataflow.IActivityGraphBuilder;
@@ -39,22 +39,18 @@ import org.apache.hyracks.dataflow.std.base.AbstractOperatorDescriptor;
 import org.apache.hyracks.dataflow.std.base.AbstractUnaryInputSinkOperatorNodePushable;
 import org.apache.hyracks.dataflow.std.base.AbstractUnaryOutputSourceOperatorNodePushable;
 import org.apache.hyracks.dataflow.std.misc.MaterializerTaskState;
+import org.apache.hyracks.storage.am.vector.api.IVTreeDistanceFunction;
 import org.apache.hyracks.util.annotations.AiProvenance;
 
 /**
- * The CLUSTER BY k-means|| RECLUSTER stage -- a single-input Score operator that consumes ONLY the broadcast
- * partials and emits plain centroid vectors. It merges the partials deterministically, then reduces the
- * weighted candidate pool to the initial centroids C0 with weighted k-means++ (see
- * {@link #weightedKMeansPlusPlus}), which weighs each candidate's mass against its distance from the centroids
- * already chosen. Fewer than {@code count} centroids come back when fewer than that many candidates attracted
- * points.
+ * The k-means|| RECLUSTER stage, which consumes the broadcast partials and emits plain centroid vectors. It
+ * merges the partials deterministically and then reduces the weighted candidate pool to the initial
+ * centroids C0 with weighted k-means++ ({@link #weightedKMeansPlusPlus}). Fewer than {@code count} centroids
+ * come back when fewer candidates attracted points.
  * <p>
- * There is no vector input: the sole input is the broadcast partials envelope stream, so the stage is a pure
- * reduction over the partials. Two activities, and points never move between them. <b>StorePool</b> is a sink
- * that materializes the broadcast input as task state ({@link MaterializerTaskState}); <b>Score</b> is a SOURCE
- * activity behind a blocking edge, because an input connector across a blocking-edge stage boundary is never
- * delivered -- which is why the pool has to be materialized rather than streamed in. Score collects the pool
- * through {@link KMeansStageRuntime} and reduces it.
+ * Two activities: <b>StorePool</b> materializes the broadcast input as task state, and <b>Score</b> reduces
+ * it as a source activity behind a blocking edge, since an input connector across a blocking-edge stage
+ * boundary is never delivered.
  */
 @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
 public final class KMeansReclusterOperatorDescriptor extends AbstractOperatorDescriptor {
@@ -63,9 +59,8 @@ public final class KMeansReclusterOperatorDescriptor extends AbstractOperatorDes
     private static final int STORE_POOL_ACTIVITY_ID = 0;
     private static final int SCORE_ACTIVITY_ID = 1;
 
-    // Seed for the weighted k-means++ draw, supplied by the plan. One seed covers the whole decision: this stage
-    // runs on a single partition over one already-merged pool. It does not on its own make the pick
-    // reproducible -- the draw walks a prefix sum in array order, so the pool's ORDER decides too.
+    // Seed for the weighted k-means++ draw; one seed suffices since this stage runs on a single partition
+    // over one merged pool. The draw walks a prefix sum in array order, so the pool's order decides too.
     private final long reclusterSeed;
 
     // How many centroids to keep. Non-negative.
@@ -75,12 +70,16 @@ public final class KMeansReclusterOperatorDescriptor extends AbstractOperatorDes
     /** Frame budget for the partial sort; see KMeansStageRuntime#foldPartials. */
     private final int framesLimit;
 
+    // The metric every distance here is measured with, which also selects the fold's centroid update.
+    private final VectorSimilarityMetric metric;
+
     public KMeansReclusterOperatorDescriptor(IOperatorDescriptorRegistry spec, RecordDescriptor vectorRecDesc,
-            int count, int poolColumn, int framesLimit, long reclusterSeed) {
+            int count, int poolColumn, int framesLimit, long reclusterSeed, VectorSimilarityMetric metric) {
         // One input: the broadcast partials, which are always envelope rows (the oversampling loop's output).
         super(spec, 1, 1);
         this.reclusterSeed = reclusterSeed;
         this.framesLimit = framesLimit;
+        this.metric = metric;
         this.count = count;
         this.poolColumn = poolColumn;
         outRecDescs[0] = vectorRecDesc;
@@ -106,28 +105,21 @@ public final class KMeansReclusterOperatorDescriptor extends AbstractOperatorDes
             return; // the merged result is identical everywhere; one partition speaks
         }
         int poolSize = rt.poolSize();
-        // Only the means outlive the fold, because weighted k-means++ rereads them once per centroid it
-        // picks. Partials arrive ordered by pool position, so a position's total is complete when the next one
-        // begins and its mean can be handed straight on -- no per-candidate count or sum vector is retained.
+        // Only the means outlive the fold, since weighted k-means++ rereads them once per centroid it picks.
+        // Partials arrive ordered by pool position, so a position's total is complete when the next begins.
         long[] memberWeights = new long[poolSize];
         int[] meanCount = { 0 };
         try (KMeansLoopIO.VectorList means =
                 new KMeansLoopIO.VectorList(ctx, ctx.getJobletContext().getJobId(), taskId, framesLimit)) {
             rt.foldPartials(poolSize, (position, weight, sum) -> {
-                double[] mean = new double[sum.length];
-                for (int d = 0; d < mean.length; d++) {
-                    mean[d] = sum[d] / weight;
-                }
-                means.add(mean);
+                means.add(KMeansLoopIO.centroidOf(sum, weight, metric));
                 memberWeights[meanCount[0]++] = weight;
             });
             means.seal();
 
-            // Fewer means than requested says the input holds fewer distinct vectors: a candidate takes rows
-            // unless an earlier one sits at the same point, and the pool stops growing only once every row
-            // does. This stage alone can tell that apart from a cluster emptying during refinement, so it is
-            // the one that names it. A warning, not a failure -- the groups that exist are a usable answer to
-            // a k the data cannot supply, and every row still lands in exactly one of them.
+            // Fewer means than requested says the input holds fewer distinct vectors. This stage alone can
+            // tell that apart from a cluster emptying during refinement, so it is the one that names it. A
+            // warning and not a failure, since the groups that exist are a usable answer.
             if (meanCount[0] < count && ctx.getWarningCollector().shouldWarn()) {
                 ctx.getWarningCollector()
                         .warn(Warning.of(null, ErrorCode.CLUSTER_BY_INVALID_INPUT,
@@ -145,7 +137,8 @@ public final class KMeansReclusterOperatorDescriptor extends AbstractOperatorDes
     /**
      * Reduces the weighted candidates to at most {@code count} centroids with weighted k-means++, the closing
      * step of the k-means|| initialization. The first centre is drawn proportional to weight alone; each
-     * subsequent one proportional to {@code w_x * d^2(x, chosen)}, so mass and distance both count.
+     * subsequent one proportional to {@code w_x * d(x, chosen)} under the stage's metric, so mass and
+     * distance both count.
      * <p>
      * Holds one weight, nearest-distance, score and taken flag per candidate -- scalars, not vectors. The
      * vectors are read and not retained: a round needs them twice, to fetch the member it just picked and to
@@ -160,7 +153,8 @@ public final class KMeansReclusterOperatorDescriptor extends AbstractOperatorDes
         if (n == 0) {
             return 0;
         }
-        final double[] nearest = new double[n]; // d^2 to the closest already-chosen centre
+        final IVTreeDistanceFunction distanceFn = KMeansLoopIO.distanceFunction(metric);
+        final double[] nearest = new double[n]; // distance to the closest already-chosen centre
         Arrays.fill(nearest, Double.POSITIVE_INFINITY);
         final boolean[] taken = new boolean[n];
         final Random rng = new Random(reclusterSeed);
@@ -191,8 +185,8 @@ public final class KMeansReclusterOperatorDescriptor extends AbstractOperatorDes
                 }
             }
             if (pick < 0) {
-                // Every remaining member coincides with one already chosen (all weighted distances vanish).
-                // Fall back to pool order so the outcome stays deterministic rather than dropping a centroid.
+                // Every remaining member coincides with one already chosen, so all weighted distances
+                // vanish. Fall back to pool order, which keeps the outcome deterministic.
                 for (int i = 0; i < n && pick < 0; i++) {
                     if (!taken[i]) {
                         pick = i;
@@ -210,7 +204,7 @@ public final class KMeansReclusterOperatorDescriptor extends AbstractOperatorDes
             means.stream(candidate -> {
                 int i = at[0]++;
                 if (!taken[i]) {
-                    double d = VectorDistanceCalculation.euclideanSquared(candidate, picked);
+                    double d = distanceFn.apply(candidate, picked);
                     if (d < nearest[i]) {
                         nearest[i] = d;
                     }

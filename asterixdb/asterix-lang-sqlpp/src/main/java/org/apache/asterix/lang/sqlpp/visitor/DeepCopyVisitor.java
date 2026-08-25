@@ -353,6 +353,22 @@ public class DeepCopyVisitor extends AbstractSqlppQueryExpressionVisitor<ILangEx
                 cc.hasWithOptions() ? (RecordConstructor) cc.getWithOptions().accept(this, arg) : null;
         ClusterbyClause copy = new ClusterbyClause(newExpr, newDescVar, newMembersVar, newClusterFieldList, newWith);
         copy.setSourceLocation(cc.getSourceLocation());
+        // Shared by reference: the holder is immutable, so the copy carries every resolved option by construction.
+        copy.setResolvedOptions(cc.getResolvedOptions());
+        if (cc.hasDecorList()) {
+            List<GbyVariableExpressionPair> decorList = new ArrayList<>();
+            for (GbyVariableExpressionPair pair : cc.getDecorPairList()) {
+                decorList.add(new GbyVariableExpressionPair((VariableExpr) pair.getVar().accept(this, arg),
+                        (Expression) pair.getExpr().accept(this, arg)));
+            }
+            copy.setDecorPairList(decorList);
+        }
+        if (cc.getClusterIdVar() != null) {
+            copy.setClusterIdVar((VariableExpr) cc.getClusterIdVar().accept(this, arg));
+        }
+        if (cc.getCentroidVar() != null) {
+            copy.setCentroidVar((VariableExpr) cc.getCentroidVar().accept(this, arg));
+        }
         return copy;
     }
 

@@ -450,14 +450,6 @@ public class BuiltinFunctions {
     public static final FunctionIdentifier INTERMEDIATE_CENTROID =
             FunctionConstants.newAsterix("agg-intermediate-centroid", 1);
     public static final FunctionIdentifier LOCAL_CENTROID = FunctionConstants.newAsterix("agg-local-centroid", 1);
-    // SQL-semantics variant of CENTROID (what the SQL++ group-by sugar resolves `centroid(x)` to via array_centroid).
-    public static final FunctionIdentifier SQL_CENTROID = FunctionConstants.newAsterix("agg-sql-centroid", 1);
-    public static final FunctionIdentifier GLOBAL_SQL_CENTROID =
-            FunctionConstants.newAsterix("agg-global-sql-centroid", 1);
-    public static final FunctionIdentifier INTERMEDIATE_SQL_CENTROID =
-            FunctionConstants.newAsterix("agg-intermediate-sql-centroid", 1);
-    public static final FunctionIdentifier LOCAL_SQL_CENTROID =
-            FunctionConstants.newAsterix("agg-local-sql-centroid", 1);
     public static final FunctionIdentifier MEDIAN = FunctionConstants.newAsterix("agg-median", 1);
     public static final FunctionIdentifier FIRST_ELEMENT = FunctionConstants.newAsterix("agg-first-element", 1);
     public static final FunctionIdentifier LOCAL_FIRST_ELEMENT =
@@ -707,8 +699,6 @@ public class BuiltinFunctions {
             FunctionConstants.newAsterix("agg-global-sql-union_mbr", 1);
 
     public static final FunctionIdentifier SCALAR_SQL_AVG = FunctionConstants.newAsterix("sql-avg", 1);
-    // Scalar/collection form of the SQL CENTROID aggregate; centroid(x) in SQL++ resolves here (array_centroid -> sql-centroid).
-    public static final FunctionIdentifier SCALAR_SQL_CENTROID = FunctionConstants.newAsterix("sql-centroid", 1);
     public static final FunctionIdentifier SCALAR_SQL_COUNT = FunctionConstants.newAsterix("sql-count", 1);
     public static final FunctionIdentifier SCALAR_SQL_COUNTN = FunctionConstants.newAsterix("sql-countn", 1);
     public static final FunctionIdentifier SCALAR_SQL_SUM = FunctionConstants.newAsterix("sql-sum", 1);
@@ -1240,13 +1230,9 @@ public class BuiltinFunctions {
     // Vector search functions
     public static final FunctionIdentifier ANN_DISTANCE =
             FunctionConstants.newAsterix("ann-distance", FunctionIdentifier.VARARGS);
-    // CLUSTER BY: nearest_centroid(point, centroids) -> AINT32 index of the closest centroid.
-    public static final FunctionIdentifier NEAREST_CENTROID = FunctionConstants.newAsterix("nearest-centroid", 2);
-    public static final FunctionIdentifier KMEANS_RECLUSTER = FunctionConstants.newAsterix("kmeans-recluster", 3);
-    public static final FunctionIdentifier KMEANS_OVERSAMPLE_LOOP =
-            FunctionConstants.newAsterix("kmeans-oversample-loop", 6);
-    public static final FunctionIdentifier KMEANS_LLOYD_LOOP = FunctionConstants.newAsterix("kmeans-lloyd-loop", 5);
-
+    // CLUSTER BY: nearest_centroid(point, centroids[, metric]) -> AINT32 index of the closest centroid.
+    public static final FunctionIdentifier NEAREST_CENTROID =
+            FunctionConstants.newAsterix("nearest-centroid", FunctionIdentifier.VARARGS);
     // Temporal functions
     public static final FunctionIdentifier UNIX_TIME_FROM_DATE_IN_DAYS =
             FunctionConstants.newAsterix("unix-time-from-date-in-days", 1);
@@ -1715,10 +1701,6 @@ public class BuiltinFunctions {
         addPrivateFunction(LOCAL_CENTROID, LocalCentroidTypeComputer.INSTANCE, true);
         addPrivateFunction(INTERMEDIATE_CENTROID, LocalCentroidTypeComputer.INSTANCE, true);
         addPrivateFunction(GLOBAL_CENTROID, NullableOrderedListOfADoubleTypeComputer.INSTANCE, true);
-        addPrivateFunction(SQL_CENTROID, NullableOrderedListOfADoubleTypeComputer.INSTANCE, true);
-        addPrivateFunction(LOCAL_SQL_CENTROID, LocalCentroidTypeComputer.INSTANCE, true);
-        addPrivateFunction(INTERMEDIATE_SQL_CENTROID, LocalCentroidTypeComputer.INSTANCE, true);
-        addPrivateFunction(GLOBAL_SQL_CENTROID, NullableOrderedListOfADoubleTypeComputer.INSTANCE, true);
         addPrivateFunction(SCALAR_FIRST_ELEMENT, CollectionMemberResultType.INSTANCE_NULLABLE, true);
         addPrivateFunction(SCALAR_LOCAL_FIRST_ELEMENT, CollectionMemberResultType.INSTANCE_NULLABLE, true);
         addPrivateFunction(SCALAR_LAST_ELEMENT, CollectionMemberResultType.INSTANCE_NULLABLE, true);
@@ -1771,7 +1753,6 @@ public class BuiltinFunctions {
         addPrivateFunction(SERIAL_INTERMEDIATE_SQL_AVG, LocalAvgTypeComputer.INSTANCE, true);
         addFunction(SCALAR_AVG, NullableDoubleTypeComputer.INSTANCE, true);
         addPrivateFunction(SCALAR_CENTROID, NullableOrderedListOfADoubleTypeComputer.INSTANCE, true);
-        addPrivateFunction(SCALAR_SQL_CENTROID, NullableOrderedListOfADoubleTypeComputer.INSTANCE, true);
         addFunction(SCALAR_COUNT, AInt64TypeComputer.INSTANCE, true);
         addFunction(SCALAR_COUNTN, CountNTypeComputer.INSTANCE, true);
         addFunction(SCALAR_MAX, scalarMinMaxTypeComputer, true);
@@ -2000,9 +1981,6 @@ public class BuiltinFunctions {
         addFunction(ANN_DISTANCE, ADoubleTypeComputer.INSTANCE, true);
 
         addPrivateFunction(NEAREST_CENTROID, AInt32TypeComputer.INSTANCE_NULLABLE, true);
-        addPrivateFunction(KMEANS_RECLUSTER, OrderedListOfAnyTypeComputer.INSTANCE, true);
-        addPrivateFunction(KMEANS_OVERSAMPLE_LOOP, OrderedListOfAnyTypeComputer.INSTANCE, true);
-        addPrivateFunction(KMEANS_LLOYD_LOOP, OrderedListOfAnyTypeComputer.INSTANCE, true);
         // Window functions
 
         addFunction(CUME_DIST, ADoubleTypeComputer.INSTANCE, false);
@@ -2387,16 +2365,6 @@ public class BuiltinFunctions {
         addIntermediateAgg(GLOBAL_CENTROID, INTERMEDIATE_CENTROID);
         addGlobalAgg(CENTROID, GLOBAL_CENTROID);
         addScalarAgg(CENTROID, SCALAR_CENTROID);
-
-        addAgg(SQL_CENTROID);
-        addAgg(LOCAL_SQL_CENTROID);
-        addAgg(GLOBAL_SQL_CENTROID);
-        addLocalAgg(SQL_CENTROID, LOCAL_SQL_CENTROID);
-        addIntermediateAgg(SQL_CENTROID, INTERMEDIATE_SQL_CENTROID);
-        addIntermediateAgg(LOCAL_SQL_CENTROID, INTERMEDIATE_SQL_CENTROID);
-        addIntermediateAgg(GLOBAL_SQL_CENTROID, INTERMEDIATE_SQL_CENTROID);
-        addGlobalAgg(SQL_CENTROID, GLOBAL_SQL_CENTROID);
-        addScalarAgg(SQL_CENTROID, SCALAR_SQL_CENTROID);
 
         addScalarAgg(AVG, SCALAR_AVG);
 

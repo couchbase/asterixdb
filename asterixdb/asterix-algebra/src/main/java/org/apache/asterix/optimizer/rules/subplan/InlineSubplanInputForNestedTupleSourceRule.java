@@ -371,6 +371,10 @@ public class InlineSubplanInputForNestedTupleSourceRule implements IAlgebraicRew
                 LogicalOperatorTag.INNERJOIN, LogicalOperatorTag.LEFTOUTERJOIN))) {
             return new Pair<>(false, new LinkedHashMap<>());
         }
+        // CLUSTER BY has no correlation key to gain from flattening, so its subplan stays a subplan.
+        if (SubplanFlatteningUtil.containsOperators(subplanOp, EnumSet.of(LogicalOperatorTag.CLUSTER_BY))) {
+            return new Pair<>(false, new LinkedHashMap<>());
+        }
         SourceLocation sourceLoc = subplanOp.getSourceLocation();
         Mutable<ILogicalOperator> inputOpRef = subplanOp.getInputs().get(0);
         ILogicalOperator inputOpBackup = inputOpRef.getValue();

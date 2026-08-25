@@ -22,9 +22,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+import org.apache.asterix.common.clustering.ClusterByOptions;
 import org.apache.asterix.common.exceptions.CompilationException;
 import org.apache.asterix.lang.common.base.AbstractClause;
 import org.apache.asterix.lang.common.base.Expression;
+import org.apache.asterix.lang.common.expression.GbyVariableExpressionPair;
 import org.apache.asterix.lang.common.expression.RecordConstructor;
 import org.apache.asterix.lang.common.expression.VariableExpr;
 import org.apache.asterix.lang.common.struct.Identifier;
@@ -40,8 +42,8 @@ public class ClusterbyClause extends AbstractClause {
 
     // The vector expression to cluster on.
     private Expression clusteringExpr;
-    // The cluster descriptor variable (AS sc): {cluster_id, centroid}; null when AS is absent -- the
-    // clustering still runs, readable through CLUSTER AS members and the SQL-92 aggregate sugar.
+    // The cluster descriptor variable (AS sc): {cluster_id, centroid}. Null when AS is absent, where the
+    // clustering still runs and is readable through CLUSTER AS members and the SQL-92 aggregate sugar.
     private VariableExpr clusterDescriptorVar;
     // The cluster-members variable (CLUSTER AS <var>); null when CLUSTER AS is absent.
     private VariableExpr clusterMembersVar;
@@ -49,6 +51,17 @@ public class ClusterbyClause extends AbstractClause {
     private List<Pair<Expression, Identifier>> clusterFieldList = new ArrayList<>();
     // Raw WITH options (algorithm, k, distance, ...); validated/extracted later by the rewrite pass.
     private RecordConstructor withOptions;
+
+    // Filled in by SqlppClusterByVisitor once the WITH options have been validated, and read by the
+    // translator, so validation stays in the language layer where its error messages belong. The holder is
+    // immutable and travels the clones whole, since a view or function body is rewritten once and then
+    // inlined. Null until the rewrite runs.
+    private ClusterByOptions resolvedOptions;
+    // Variables live before the clause that the query reads after it, carried through the operator
+    // unchanged as GROUP BY decorations are. Filled by the aggregation sugar visitor after name resolution.
+    private List<GbyVariableExpressionPair> decorPairList;
+    private VariableExpr clusterIdVar;
+    private VariableExpr centroidVar;
 
     public ClusterbyClause(Expression clusteringExpr, VariableExpr clusterDescriptorVar, VariableExpr clusterMembersVar,
             List<Pair<Expression, Identifier>> clusterFieldList, RecordConstructor withOptions) {
@@ -83,10 +96,6 @@ public class ClusterbyClause extends AbstractClause {
         return clusterDescriptorVar;
     }
 
-    public void setClusterDescriptorVar(VariableExpr clusterDescriptorVar) {
-        this.clusterDescriptorVar = clusterDescriptorVar;
-    }
-
     public VariableExpr getClusterMembersVar() {
         return clusterMembersVar;
     }
@@ -115,6 +124,48 @@ public class ClusterbyClause extends AbstractClause {
 
     public boolean hasClusterDescriptorVar() {
         return clusterDescriptorVar != null;
+    }
+
+    /** The validated WITH settings, or null before the CLUSTER BY rewrite has run. */
+    public ClusterByOptions getResolvedOptions() {
+        return resolvedOptions;
+    }
+
+    /** Records the validated WITH settings for the translator. */
+    public void setResolvedOptions(ClusterByOptions resolvedOptions) {
+        this.resolvedOptions = resolvedOptions;
+    }
+
+    public boolean isResolved() {
+        return resolvedOptions != null;
+    }
+
+    public VariableExpr getClusterIdVar() {
+        return clusterIdVar;
+    }
+
+    public void setClusterIdVar(VariableExpr clusterIdVar) {
+        this.clusterIdVar = clusterIdVar;
+    }
+
+    public VariableExpr getCentroidVar() {
+        return centroidVar;
+    }
+
+    public void setCentroidVar(VariableExpr centroidVar) {
+        this.centroidVar = centroidVar;
+    }
+
+    public List<GbyVariableExpressionPair> getDecorPairList() {
+        return decorPairList;
+    }
+
+    public void setDecorPairList(List<GbyVariableExpressionPair> decorPairList) {
+        this.decorPairList = decorPairList;
+    }
+
+    public boolean hasDecorList() {
+        return decorPairList != null && !decorPairList.isEmpty();
     }
 
     public boolean hasClusterMembersVar() {

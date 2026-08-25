@@ -160,9 +160,9 @@ public class SqlppQueryRewriter implements IQueryRewriter {
         // for the new projections that it introduces
         rewriteSqlCompat();
 
-        // Cluster-by rewrites: desugar CLUSTER BY into a k-means query (LET centroids + GROUP BY). Must run
-        // BEFORE substituteGroupbyKeyExpression()/rewriteGroupBys() so the emitted GROUP BY goes through the
-        // full group-by pipeline (key-var registration, group-var aggregation) exactly like a parsed one.
+        // Cluster-by rewrites: validate the WITH options, record them on the clause, and name its output
+        // variables. Must run before variableCheckAndRewrite() scopes those variables and before the
+        // aggregation sugar reads them.
         rewriteClusterBys();
 
         // Substitutes group-by key expressions.
@@ -224,6 +224,10 @@ public class SqlppQueryRewriter implements IQueryRewriter {
 
         // Inlines functions and views
         loadAndInlineUdfsAndViews();
+
+        // A UDF or view body validates on its own, so a parameter bound to an enclosing query's variable
+        // becomes a visible CLUSTER BY violation only after inlining.
+        checkClusterByEnclosingVariables();
 
         // Rewrites SQL++ core aggregate function names into internal names
         rewriteSpecialFunctionNames();
@@ -341,6 +345,11 @@ public class SqlppQueryRewriter implements IQueryRewriter {
     protected void rewriteClusterBys() throws CompilationException {
         SqlppClusterByVisitor clusterByVisitor = new SqlppClusterByVisitor(context);
         rewriteTopExpr(clusterByVisitor, null);
+    }
+
+    protected void checkClusterByEnclosingVariables() throws CompilationException {
+        SqlppClusterByVisitor checkVisitor = new SqlppClusterByVisitor(context, true);
+        rewriteTopExpr(checkVisitor, null);
     }
 
     protected void rewriteGroupingSets() throws CompilationException {

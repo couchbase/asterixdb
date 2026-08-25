@@ -62,7 +62,9 @@ public class SqlppGroupByVisitor extends AbstractSqlppExpressionExtractionVisito
         if (selectBlock.hasFromClause()) {
             if (selectBlock.hasGroupbyClause()) {
                 rewriteSelectWithGroupBy(selectBlock, arg);
-            } else {
+            } else if (!selectBlock.hasClusterbyClause()) {
+                // A CLUSTER BY block is grouped by its clause; an implicit GROUP ALL here would sit under the
+                // operator and take the clustering expression's binding away from it.
                 rewriteSelectWithoutGroupBy(selectBlock);
             }
         }

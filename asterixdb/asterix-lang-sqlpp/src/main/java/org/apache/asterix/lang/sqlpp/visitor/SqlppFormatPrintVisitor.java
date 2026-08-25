@@ -177,6 +177,11 @@ public class SqlppFormatPrintVisitor extends FormatPrintVisitor implements ISqlp
         }
         if (selectBlock.hasClusterbyClause()) {
             selectBlock.getClusterbyClause().accept(this, step);
+            if (selectBlock.hasLetHavingClausesAfterGroupby()) {
+                for (AbstractClause letHavingClause : selectBlock.getLetHavingListAfterGroupby()) {
+                    letHavingClause.accept(this, step);
+                }
+            }
         }
         return null;
     }

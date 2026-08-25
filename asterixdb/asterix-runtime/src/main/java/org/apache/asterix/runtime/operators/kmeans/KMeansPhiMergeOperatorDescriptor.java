@@ -57,9 +57,9 @@ import org.apache.hyracks.util.annotations.AiProvenance;
  * is ever live — it is emitted and removed before the next round's frames arrive. The {@code round} field is
  * carried through (not merely counted) so the downstream Sample can seed its per-round RNG with the exact round.
  * <p>
- * The partials are held <b>indexed by partition</b> and summed in that order rather than accumulated on
- * arrival. Floating-point addition is not associative, so an arrival-order sum makes phi differ between runs of
- * the same query on the same data — and phi scales every draw probability, so the clustering would differ too.
+ * The partials are held indexed by partition and summed in that order, since floating-point addition is
+ * not associative and an arrival-order sum would make phi, which scales every draw probability, differ
+ * between runs of the same query.
  * Everything else in the loop is already deterministic on a fixed topology (fixed seeds; PoolMerge and
  * CentroidMerge sort before folding); this keeps the reduce from being the one place that is not.
  */
@@ -88,8 +88,8 @@ public class KMeansPhiMergeOperatorDescriptor extends AbstractSingleActivityOper
     }
 
     /**
-     * Sums by ascending partition. Package-private and separated from the pushable so the property that matters
-     * -- the result does not depend on the order the frames arrived -- can be pinned by a test.
+     * Sums by ascending partition. Package-private and separated from the pushable so a test can pin the
+     * property that the result does not depend on frame arrival order.
      */
     static double reduceInPartitionOrder(double[] sigmas) {
         double phi = 0.0d;
@@ -100,8 +100,8 @@ public class KMeansPhiMergeOperatorDescriptor extends AbstractSingleActivityOper
     }
 
     /**
-     * @param recDesc the {@code {round:int, value:double}} record descriptor, used for BOTH input (localSigma) and
-     *                output (phi) — the two frames share the same shape.
+     * @param recDesc the {@code {round:int, value:double}} record descriptor, which both the localSigma input
+     *                and the phi output use.
      */
     public KMeansPhiMergeOperatorDescriptor(IOperatorDescriptorRegistry spec, RecordDescriptor recDesc,
             int nParticipants) {
@@ -117,12 +117,8 @@ public class KMeansPhiMergeOperatorDescriptor extends AbstractSingleActivityOper
         return new AbstractUnaryInputUnaryOutputOperatorNodePushable() {
             private final FrameTupleAccessor accessor = new FrameTupleAccessor(inRecDesc);
             private final FrameTupleReference tuple = new FrameTupleReference();
-            // round -> this round's local potentials, indexed by PARTITION (NaN = not yet reported).
-            //
-            // Indexed rather than accumulated because floating-point addition is not associative: summing in
-            // network arrival order makes phi -- and therefore every draw probability derived from it -- vary
-            // between runs of the same query. Holding P doubles per round and summing by index makes the reduce
-            // deterministic, which is what the rest of the loop already assumes (fixed seeds; PoolMerge and
+            // round -> this round's local potentials, indexed by PARTITION (NaN = not yet reported), so the
+            // reduce sums in a fixed order and stays deterministic (fixed seeds; PoolMerge and
             // CentroidMerge both sort before folding).
             private final Map<Integer, double[]> sigmasByRound = new HashMap<>();
             private FrameTupleAppender appender;

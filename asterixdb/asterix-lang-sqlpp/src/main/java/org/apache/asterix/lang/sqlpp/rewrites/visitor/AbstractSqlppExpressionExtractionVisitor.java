@@ -73,8 +73,11 @@ abstract class AbstractSqlppExpressionExtractionVisitor extends AbstractSqlppSim
         if (!letHavingListAfterGby.isEmpty()) {
             visitLetHavingClausesAfterGby(arg, stackElement.extractionList, letHavingListAfterGby, groupbyClause);
         }
+        // An expression lifted out of the SELECT clause lands after whatever groups the block, or it would be
+        // evaluated before the variables it reads exist. CLUSTER BY groups its block as GROUP BY does.
+        boolean grouped = selectBlock.hasGroupbyClause() || selectBlock.hasClusterbyClause();
         visitSelectClause(selectBlock.getSelectClause(), arg, stackElement.extractionList,
-                selectBlock.hasGroupbyClause() ? letHavingListAfterGby : letWhereList, groupbyClause);
+                grouped ? letHavingListAfterGby : letWhereList, groupbyClause);
 
         stack.pop();
         return null;

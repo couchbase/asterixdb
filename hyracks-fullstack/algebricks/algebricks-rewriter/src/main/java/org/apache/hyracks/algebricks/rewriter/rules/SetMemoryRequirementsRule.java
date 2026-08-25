@@ -32,6 +32,7 @@ import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractOper
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractUnnestMapOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AggregateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AssignOperator;
+import org.apache.hyracks.algebricks.core.algebra.operators.logical.ClusterByOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DataSourceScanOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DelegateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DistinctOperator;
@@ -309,6 +310,14 @@ public class SetMemoryRequirementsRule implements IAlgebraicRewriteRule {
 
         @Override
         public Void visitIntersectOperator(IntersectOperator op, Void arg) throws AlgebricksException {
+            return null;
+        }
+
+        @Override
+        public Void visitClusterByOperator(ClusterByOperator op, Void arg) throws AlgebricksException {
+            // Set before expansion so a budget exists even if the plan is inspected between the rewrite and
+            // the rule that expands this into stages; each stage then declares its own.
+            setOperatorMemoryBudget(op, physConfig.getMaxFramesForClusterBy());
             return null;
         }
 

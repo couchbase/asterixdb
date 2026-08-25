@@ -353,6 +353,11 @@ public class FreeVariableVisitor extends AbstractSqlppQueryExpressionVisitor<Voi
         if (cc.hasWithOptions()) {
             cc.getWithOptions().accept(this, freeVars);
         }
+        if (cc.hasDecorList()) {
+            for (GbyVariableExpressionPair pair : cc.getDecorPairList()) {
+                pair.getExpr().accept(this, freeVars);
+            }
+        }
         return null;
     }
 

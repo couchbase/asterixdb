@@ -37,6 +37,7 @@ import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractOper
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractUnnestMapOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AggregateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AssignOperator;
+import org.apache.hyracks.algebricks.core.algebra.operators.logical.ClusterByOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DataSourceScanOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DelegateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DistinctOperator;
@@ -321,11 +322,30 @@ public class UsedVariableVisitor implements ILogicalOperatorVisitor<Void, Void> 
 
     @Override
     public Void visitKMeansStageOperator(KMeansStageOperator op, Void arg) throws AlgebricksException {
-        // vectorVariable is null for the single-input merge modes (RECLUSTER/LLOYD).
+        // vectorVariable is null for RECLUSTER, the single-input mode.
         if (op.getVectorVariable() != null) {
             usedVariables.add(op.getVectorVariable());
         }
         usedVariables.add(op.getPoolVariable());
+        return null;
+    }
+
+    @Override
+    public Void visitClusterByOperator(ClusterByOperator op, Void arg) throws AlgebricksException {
+        visitNestedPlans(op);
+        usedVariables.add(op.getVectorVariable());
+        if (op.getAssignedCentroidVariable() != null) {
+            // Declared used so its defining assign below survives to the aggregate pushdown, which
+            // substitutes it into pushed members-subqueries; the expansion then redefines it.
+            usedVariables.add(op.getAssignedCentroidVariable());
+        }
+        // The member record is read by the expansion; reported here so the assign that builds it is not pruned.
+        if (op.getMemberRecordVariable() != null) {
+            usedVariables.add(op.getMemberRecordVariable());
+        }
+        for (Pair<LogicalVariable, Mutable<ILogicalExpression>> p : op.getDecorList()) {
+            p.second.getValue().getUsedVariables(usedVariables);
+        }
         return null;
     }
 

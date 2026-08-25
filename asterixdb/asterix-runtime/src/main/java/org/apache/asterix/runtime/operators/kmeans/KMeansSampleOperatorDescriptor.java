@@ -57,9 +57,8 @@ import org.apache.hyracks.util.annotations.AiProvenance;
  * would be the same arithmetic twice, and would need the pool resident to do it. Reading the column instead
  * removes a scan whose cost grew with the pool, which grows with k.
  * <p>
- * The vector run file and the column are looked up from joblet state (both created by the co-located Cost
- * operator, Op1) on the first frame rather than in {@code open()}, since only the arrival of data orders this
- * task behind Op1's registration. Points already covered by the pool (d^2 = 0) are never re-drawn, and a
+ * The vector run file and the column are looked up from joblet state on the first frame and not in
+ * {@code open()}, since only the arrival of data orders this task behind Op1's registration. Points already covered by the pool (d^2 = 0) are never re-drawn, and a
  * non-positive phi (pool already covers everything) yields no draws, as in the paper.
  */
 @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
@@ -123,10 +122,9 @@ public class KMeansSampleOperatorDescriptor extends AbstractSingleActivityOperat
             private void sampleRound(int round, double phi) throws HyracksDataException {
                 final double l = oversamplingCount;
                 if (phi > 0.0d) {
-                    // Op1 already scored every vector against this exact pool in this exact round -- it is what
-                    // phi was summed from -- so the distances are read rather than recomputed here, and the pool
-                    // is never opened. The random number of a draw depends only on the vector. The order the
-                    // vectors are visited in does not matter.
+                    // Op1 already scored every vector against this exact pool in this round, which is what phi
+                    // was summed from, so the distances are read back and the pool is never opened. A draw's
+                    // random number depends only on the vector, so visit order does not matter.
                     MaterializerTaskState scoreState = (MaterializerTaskState) LoopControlState.required(ctx,
                             LoopControlState.scoreStateId(loopKey, partition));
                     try (KMeansLoopIO.ScoreColumnReader scores = new KMeansLoopIO.ScoreColumnReader(scoreState, ctx)) {

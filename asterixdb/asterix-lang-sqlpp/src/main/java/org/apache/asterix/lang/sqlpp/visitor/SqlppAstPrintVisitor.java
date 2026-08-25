@@ -182,6 +182,11 @@ public class SqlppAstPrintVisitor extends QueryPrintVisitor implements ISqlppVis
         }
         if (selectBlock.hasClusterbyClause()) {
             selectBlock.getClusterbyClause().accept(this, step);
+            if (selectBlock.hasLetHavingClausesAfterGroupby()) {
+                for (AbstractClause letHavingClause : selectBlock.getLetHavingListAfterGroupby()) {
+                    letHavingClause.accept(this, step);
+                }
+            }
         }
         return null;
     }
@@ -357,6 +362,10 @@ public class SqlppAstPrintVisitor extends QueryPrintVisitor implements ISqlppVis
         if (cc.hasWithOptions()) {
             out.println(skip(step + 1) + "WITH");
             cc.getWithOptions().accept(this, step + 1);
+        }
+        if (cc.hasDecorList()) {
+            out.println(skip(step + 1) + "DECOR");
+            printGroupByPairList(cc.getDecorPairList(), step + 2);
         }
         return null;
     }

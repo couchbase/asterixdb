@@ -50,6 +50,7 @@ import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractUnne
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractUnnestNonMapOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AggregateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AssignOperator;
+import org.apache.hyracks.algebricks.core.algebra.operators.logical.ClusterByOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DataSourceScanOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DelegateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.DistinctOperator;
@@ -878,6 +879,25 @@ public class LogicalOperatorPrettyPrintVisitorJson extends AbstractLogicalOperat
             jsonGenerator.writeNumberField("top-count", op.getTopCount());
             jsonGenerator.writeStringField("mode", op.getMode().getLabel());
             jsonGenerator.writeNumberField("seed", op.getSeed());
+            jsonGenerator.writeStringField("metric", op.getMetric());
+            return null;
+        } catch (IOException e) {
+            throw AlgebricksException.create(ErrorCode.ERROR_PRINTING_PLAN, e, String.valueOf(e));
+        }
+    }
+
+    @Override
+    public Void visitClusterByOperator(ClusterByOperator op, Void indent) throws AlgebricksException {
+        try {
+            jsonGenerator.writeStringField(OPERATOR_FIELD, "cluster-by");
+            jsonGenerator.writeStringField("cluster-id-variable", String.valueOf(op.getClusterIdVariable()));
+            jsonGenerator.writeStringField("centroid-variable", String.valueOf(op.getCentroidVariable()));
+            jsonGenerator.writeStringField("members-variable", String.valueOf(op.getMembersVariable()));
+            jsonGenerator.writeStringField("vector-variable", String.valueOf(op.getVectorVariable()));
+            jsonGenerator.writeStringField("options", String.valueOf(op.getOptions()));
+            if (!op.getDecorList().isEmpty()) {
+                writeArrayFieldOfVariableExpressionPairs("decor-by", op.getDecorList(), indent);
+            }
             return null;
         } catch (IOException e) {
             throw AlgebricksException.create(ErrorCode.ERROR_PRINTING_PLAN, e, String.valueOf(e));

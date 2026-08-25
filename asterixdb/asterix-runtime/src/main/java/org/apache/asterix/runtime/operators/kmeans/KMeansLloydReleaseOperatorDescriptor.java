@@ -34,14 +34,12 @@ import org.apache.hyracks.dataflow.std.base.AbstractUnaryInputSinkOperatorNodePu
 import org.apache.hyracks.util.annotations.AiProvenance;
 
 /**
- * CLUSTER BY k-means‖ Lloyd loop — the tail that closes the loop back: publish the iteration's centroids to this
- * partition's store, then wake its Controller.
+ * The Lloyd loop tail, which publishes the iteration's centroids to this partition's store and then wakes
+ * its Controller.
  * <p>
- * This is the counterpart of the oversampling loop's release, and differs in one respect: an oversampling round
- * <em>appends</em> its draws to a growing pool, whereas a Lloyd iteration <em>replaces</em> the centroid set
- * outright, so the centroids are buffered until the end marker and then published in one shot. Publishing before
- * releasing the permit is what makes the new set visible to the Controller's next read — the semaphore supplies
- * the happens-before, so there is no lock and no volatile handshake beyond the store's own field.
+ * A Lloyd iteration replaces the centroid set outright, so the centroids are buffered until the end marker
+ * and published in one shot. Publishing precedes releasing the permit, which is what makes the new set
+ * visible to the Controller's next read: the semaphore supplies the happens-before.
  * <p>
  * The operator has no output. Its effect is entirely the store update plus the permit, which is why the physical
  * operator registers it as a job root — nothing downstream would otherwise pull its branch into the schedule.
@@ -101,8 +99,8 @@ public class KMeansLloydReleaseOperatorDescriptor extends AbstractSingleActivity
                         ctl.releaseTurn();
                     } else {
                         if (!building) {
-                            // The set is streamed straight into the store rather than gathered first: buffering it
-                            // here would put O(k * dim) back on the heap that the store exists to keep off it.
+                            // Streamed straight into the store, since buffering it here would put O(k * dim)
+                            // back on the heap that the store exists to keep off it.
                             store.beginPut(ctx);
                             building = true;
                         }
@@ -114,9 +112,8 @@ public class KMeansLloydReleaseOperatorDescriptor extends AbstractSingleActivity
 
             @Override
             public void fail() throws HyracksDataException {
-                // Loop tail: if it dies, the Controller's turn never arrives. Abort closes the gap before the
-                // job-level abort interrupts the head, and makes it raise rather than proceed (see
-                // LoopControlState#abort). The centroid handoff is this partition's and is dead once the loop is.
+                // Loop tail: if it dies, the Controller's turn never arrives. Abort closes the gap until the
+                // job-level abort interrupts the head, and makes it raise (see LoopControlState#abort).
                 if (ctl != null) {
                     ctl.abort();
                 }

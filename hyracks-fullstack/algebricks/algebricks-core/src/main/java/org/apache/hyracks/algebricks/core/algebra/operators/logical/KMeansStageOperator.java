@@ -47,7 +47,7 @@ import org.apache.hyracks.util.annotations.AiProvenance;
  * input) for the RECLUSTER merge, so {@link #getVectorVariable()} is null in that mode.
  */
 @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_4_8, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
-@AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "Carries the declared vector dimension for the loop stages")
+@AiProvenance(agent = AiProvenance.Agent.CLAUDE_FABLE_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
 public class KMeansStageOperator extends AbstractLogicalOperator {
 
     /**
@@ -88,30 +88,36 @@ public class KMeansStageOperator extends AbstractLogicalOperator {
     // is no vector input and the pool is the operator's sole (index-0) input.
     private final Mutable<ILogicalExpression> vectorRef;
     private final Mutable<ILogicalExpression> poolRef;
-    // The single produced variable: a candidate vector, same type as vectorVar (opaque; from translator).
+    // The single produced variable: a candidate vector, typed open by the expansion rule that builds the stage.
     private LogicalVariable candidateVar;
     private final Object candidateVarType;
     // RECLUSTER: k, the number of initial centroids to keep. Always non-negative.
     private final int topCount;
-    // Always assigned by the translator, and carried across by both deep-copy visitors; the initializer only
-    // satisfies the compiler.
-    private Mode mode = Mode.RECLUSTER;
-    // OVERSAMPLE_LOOP only: base seed for the per-round, per-partition Bernoulli RNG (per-round seed =
-    // seed + r; reproducible on a fixed topology). Unused by every other mode.
-    private long seed;
-    // OVERSAMPLE_LOOP only: number of oversample iterations the operator runs internally. Unused otherwise.
-    private int loopRounds;
+    private final Mode mode;
+    // Base seed for the mode's RNG (the loops draw per round and per partition; RECLUSTER's roulette draws
+    // once). LLOYD_LOOP draws nothing and takes 0.
+    private final long seed;
+    // The loop modes only: how many rounds or iterations the operator runs internally. RECLUSTER takes 0.
+    private final int loopRounds;
     // Loop stages only: the declared vector width, enforced by the operators' decoder (a predicate could be
     // pushed into the columnar reader and evaluated per array element). Unused by RECLUSTER.
-    private int dimension;
+    private final int dimension;
+    // The metric's canonical name; a String since the metric enum lives above Algebricks.
+    private final String metric;
 
     public KMeansStageOperator(Mutable<ILogicalExpression> vectorRef, Mutable<ILogicalExpression> poolRef,
-            LogicalVariable candidateVar, Object candidateVarType, int topCount) {
+            LogicalVariable candidateVar, Object candidateVarType, int topCount, Mode mode, long seed, int loopRounds,
+            int dimension, String metric) {
         this.vectorRef = vectorRef;
         this.poolRef = poolRef;
         this.candidateVar = candidateVar;
         this.candidateVarType = candidateVarType;
         this.topCount = topCount;
+        this.mode = mode;
+        this.seed = seed;
+        this.loopRounds = loopRounds;
+        this.dimension = dimension;
+        this.metric = metric;
     }
 
     @Override
@@ -204,26 +210,14 @@ public class KMeansStageOperator extends AbstractLogicalOperator {
         return mode;
     }
 
-    public void setMode(Mode mode) {
-        this.mode = mode;
-    }
-
-    /** OVERSAMPLE_LOOP only: base seed for the per-round, per-partition Bernoulli RNG. */
+    /** Base seed for the mode's RNG; 0 for LLOYD_LOOP, which draws nothing. */
     public long getSeed() {
         return seed;
     }
 
-    public void setSeed(long seed) {
-        this.seed = seed;
-    }
-
-    /** OVERSAMPLE_LOOP only: how many oversample iterations the operator runs internally. */
+    /** The loop modes only: how many rounds or iterations the operator runs internally. */
     public int getLoopRounds() {
         return loopRounds;
-    }
-
-    public void setLoopRounds(int loopRounds) {
-        this.loopRounds = loopRounds;
     }
 
     /** The loop stages only: the declared vector width the decoder admits. */
@@ -231,7 +225,7 @@ public class KMeansStageOperator extends AbstractLogicalOperator {
         return dimension;
     }
 
-    public void setDimension(int dimension) {
-        this.dimension = dimension;
+    public String getMetric() {
+        return metric;
     }
 }

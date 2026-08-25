@@ -35,14 +35,12 @@ import org.apache.hyracks.util.annotations.AiProvenance;
 /**
  * The current centroid set of one Lloyd loop partition, handed from the loop's tail back to its head.
  * <p>
- * Unlike the oversampling pool — which grows without bound and therefore lives in a run file — a Lloyd iteration
- * <em>replaces</em> its centroids, so the working set is bounded by the centroid count rather than by the data.
- * It is still O(k · dim) though, and k is the user's to choose, so the set lives in a run file: at 384 dimensions
- * it is a few megabytes for the k values this feature targets but hundreds for a large one, on every partition.
+ * A Lloyd iteration replaces its centroids, so the working set is bounded by the centroid count. Since k is
+ * the user's to choose and the set is O(k * dim), it lives in a run file on every partition.
  * <p>
- * The interface is therefore write-once-then-replay rather than list-in, list-out. Nothing needs random access
- * to it -- the loop scores vectors against the whole set and the final emit walks it once -- and a list-shaped
- * interface would force the whole set into the heap at the boundary regardless of how it was stored.
+ * The interface is write-once-then-replay, since nothing needs random access: the loop scores vectors
+ * against the whole set and the final emit walks it once. A list-shaped interface would force the whole set
+ * into the heap at the boundary.
  * <p>
  * Visibility between the writing task (Release) and the reading task (Controller) is supplied by the loop permit:
  * the writer stores before {@code release()} and the reader loads after {@code acquire()}, so the semaphore's
@@ -73,10 +71,10 @@ public interface CentroidStore {
     /**
      * The default implementation: each set in a run file, one generation at a time.
      * <p>
-     * Two files are live at the swap and no more -- the set being built and the one still being read -- so the
-     * heap holds a frame, not a centroid set. The published set is swapped in as a whole, which is what lets the
-     * reader see either the previous generation or the new one but never a partial one; the loop permit orders
-     * the two tasks around that swap (writer stores before {@code release()}, reader loads after
+     * Two files are live at the swap and no more, the set being built and the one still being read, so the
+     * heap holds a frame and not a centroid set. The published set is swapped in as a whole, which lets the
+     * reader see either the previous generation or the new one but never a partial one; the loop permit
+     * orders the two tasks around that swap (writer stores before {@code release()}, reader loads after
      * {@code acquire()}), so its happens-before covers the handoff without further synchronization.
      */
     final class Spilling implements CentroidStore {

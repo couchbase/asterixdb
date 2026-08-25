@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
+import org.apache.asterix.runtime.utils.VectorDistanceCalculation;
 import org.apache.hyracks.api.context.IHyracksTaskContext;
 import org.apache.hyracks.api.dataflow.ActivityId;
 import org.apache.hyracks.api.dataflow.OperatorDescriptorId;
@@ -30,6 +31,7 @@ import org.apache.hyracks.api.dataflow.TaskId;
 import org.apache.hyracks.api.exceptions.HyracksDataException;
 import org.apache.hyracks.api.job.JobId;
 import org.apache.hyracks.dataflow.std.misc.MaterializerTaskState;
+import org.apache.hyracks.storage.am.vector.api.IVTreeDistanceFunction;
 import org.apache.hyracks.test.support.TestUtils;
 import org.junit.Assert;
 import org.junit.Test;
@@ -44,6 +46,8 @@ import org.junit.Test;
  * temp directory, so the live file count is directly observable.
  */
 public class KMeansRunFileLifecycleTest {
+    /** These tests pin the scan's mechanics, not a metric; squared Euclidean is what the feature defaults to. */
+    private static final IVTreeDistanceFunction EUCLIDEAN_SQUARED = VectorDistanceCalculation::euclideanSquared;
 
     private static final int FRAME_SIZE = 32768;
     private static final String WORKSPACE_PREFIX = MaterializerTaskState.class.getSimpleName();
@@ -160,7 +164,8 @@ public class KMeansRunFileLifecycleTest {
         MaterializerTaskState column = newState(ctx, 7);
         try {
             List<Integer> blocks = new ArrayList<>();
-            KMeansLoopIO.streamScoredAgainstPool(vectors, pool, ctx, 4, (v, n, near, idx) -> blocks.add(n));
+            KMeansLoopIO.streamScoredAgainstPool(vectors, pool, ctx, 4, EUCLIDEAN_SQUARED,
+                    (v, n, near, idx) -> blocks.add(n));
             Assert.assertTrue("no vectors, so no block should be delivered", blocks.isEmpty());
 
             KMeansLoopIO.ScoreColumnWriter w = new KMeansLoopIO.ScoreColumnWriter(column, ctx);

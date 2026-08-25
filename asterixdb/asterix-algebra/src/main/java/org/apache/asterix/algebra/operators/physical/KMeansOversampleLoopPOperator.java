@@ -26,6 +26,7 @@ import org.apache.asterix.runtime.operators.kmeans.KMeansReleaseOperatorDescript
 import org.apache.asterix.runtime.operators.kmeans.KMeansSampleOperatorDescriptor;
 import org.apache.hyracks.algebricks.common.constraints.AlgebricksAbsolutePartitionConstraint;
 import org.apache.hyracks.algebricks.common.constraints.AlgebricksCountPartitionConstraint;
+import org.apache.hyracks.algebricks.common.constraints.AlgebricksPartitionConstraint;
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
 import org.apache.hyracks.algebricks.core.algebra.base.IHyracksJobBuilder;
 import org.apache.hyracks.algebricks.core.algebra.base.ILogicalOperator;
@@ -64,11 +65,11 @@ public class KMeansOversampleLoopPOperator extends AbstractKMeansLoopPOperator {
         String loopKey = "kmeansSystolicLoop#" + kop.getCandidateVariable();
         int participants = clusterLocations.length;
 
-        // Op1 Cost/Controller — the registered descriptor (inputs land here; output 0 carries the weighed
-        // partials the downstream RECLUSTER reduces).
-        KMeansCostControllerOperatorDescriptor op1 =
-                new KMeansCostControllerOperatorDescriptor(spec, poolEnvelopeRecDesc, KMeansLoopIO.SIGMA_RD, loopKey,
-                        vectorColumn, seedColumn, kop.getLoopRounds(), framesLimit(), kop.getDimension());
+        // Op1 Cost/Controller is the registered descriptor: inputs land here, and output 0 carries the
+        // weighed partials the downstream RECLUSTER reduces.
+        KMeansCostControllerOperatorDescriptor op1 = new KMeansCostControllerOperatorDescriptor(spec,
+                poolEnvelopeRecDesc, KMeansLoopIO.SIGMA_RD, loopKey, vectorColumn, seedColumn, kop.getLoopRounds(),
+                framesLimit(), kop.getDimension(), metricOf(kop));
         contributeOpDesc(builder, op, op1);
         builder.contributeGraphEdge(src0, 0, op, 0);
         builder.contributeGraphEdge(src1, 0, op, 1);
@@ -86,12 +87,19 @@ public class KMeansOversampleLoopPOperator extends AbstractKMeansLoopPOperator {
 
         // Partition constraints (registered via the builder so the job-gen finalizer does not double-assign a
         // default). Op1/Op3/Op5 share identical absolute locations -> co-located per partition; merges single-node.
-        AlgebricksAbsolutePartitionConstraint coLocated = new AlgebricksAbsolutePartitionConstraint(clusterLocations);
+        // A single-instance loop (an unpartitioned stage) names no node: every operator of it takes a count-1
+        // constraint, which the job builder resolves to the one node it uses for all one-partition operators
+        // of the job. The stages are therefore co-located with each other, which their shared joblet state
+        // requires, and with the input that feeds them.
+        boolean singleInstance = clusterLocations.length == 1;
+        AlgebricksPartitionConstraint coLocated = singleInstance ? new AlgebricksCountPartitionConstraint(1)
+                : new AlgebricksAbsolutePartitionConstraint(clusterLocations);
+        AlgebricksPartitionConstraint singleNode = new AlgebricksCountPartitionConstraint(1);
         builder.contributeAlgebricksPartitionConstraint(op1, coLocated);
         builder.contributeAlgebricksPartitionConstraint(op3, coLocated);
         builder.contributeAlgebricksPartitionConstraint(op5, coLocated);
-        builder.contributeAlgebricksPartitionConstraint(op2, new AlgebricksCountPartitionConstraint(1));
-        builder.contributeAlgebricksPartitionConstraint(op4, new AlgebricksCountPartitionConstraint(1));
+        builder.contributeAlgebricksPartitionConstraint(op2, singleNode);
+        builder.contributeAlgebricksPartitionConstraint(op4, singleNode);
 
         // Internal pipelined broadcast edges: Op1.localSigma -> PhiMerge -> Sample -> PoolMerge -> Release.
         // (Broadcast into a single-partition merge is a CONCURRENT M-to-1; never the sequential merging connector,
