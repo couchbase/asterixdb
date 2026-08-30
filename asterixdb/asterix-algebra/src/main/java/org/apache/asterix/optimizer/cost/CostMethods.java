@@ -144,10 +144,23 @@ public class CostMethods implements ICostMethods {
             indexSel = limit / inputCard;
         }
 
+        return costPrimaryFetch(inputCard * indexSel, jn.getUnnestFactor(), inputSize, outputSize);
+    }
+
+    /**
+     * Fetch of the given number of rows from the primary index, including the sort of their primary
+     * keys that precedes it.
+     *
+     * @param fetchedCard rows reaching the fetch
+     * @param unnestFactor duplicate RIDs the distinct operator removes; 1.0 for regular indexes
+     * @param inputSize original size of the dataset
+     * @param outputSize width of the variables leaving the fetch
+     */
+    private Cost costPrimaryFetch(double fetchedCard, double unnestFactor, double inputSize, double outputSize) {
         // Duplicates RIDs will be removed by the distinct operator in case of array indexes.
         // We account for that with the unnestFactor, which is 1.0 for regular indexes.
-        double docsProcessed = inputCard * indexSel / DOP / jn.getUnnestFactor() * docSizeFactor(outputSize);
-        double docsProduced = inputCard * indexSel / DOP * docSizeFactor(outputSize);
+        double docsProcessed = fetchedCard / DOP / unnestFactor * docSizeFactor(outputSize);
+        double docsProduced = fetchedCard / DOP * docSizeFactor(outputSize);
         double docsSent = 0;
 
         // Since we do not have exchanges at the logical plan level, docsSent for the exchange above the
@@ -161,6 +174,29 @@ public class CostMethods implements ICostMethods {
         docsProcessed += costSort(docsProcessed, inputSize);
 
         return new Cost(docsProcessed, docsProduced, docsSent, 0, ioSeq, ioRand);
+    }
+
+    /**
+     * Cost of answering a similarity search from a vector index: the descent through the centroid
+     * hierarchy and a distance evaluation per entry in every probed cluster.
+     * <p>
+     * @param geometry how much of the index one storage partition's search touches
+     * @param fetchedCard candidates reranked; zero when the index answers the query on its own
+     * @param inputSize original size of the dataset
+     * @param outputSize width of the variables leaving the search
+     */
+    public Cost costVectorIndexScan(VectorIndexGeometry geometry, double fetchedCard, double inputSize,
+            double outputSize) {
+        double sizeFactor = docSizeFactor(outputSize);
+
+        // Routing evaluations down the hierarchy, then one distance evaluation per entry in every
+        // probed cluster.
+        double docsProcessed = (geometry.getTreeCentroids() + geometry.getScannedEntries()) / DOP * sizeFactor;
+        double docsProduced = fetchedCard / DOP * sizeFactor;
+
+        Cost searchCost = new Cost(docsProcessed, docsProduced, 0, 0, geometry.getDataPages() / DOP, 0);
+
+        return (Cost) searchCost.costAdd(costPrimaryFetch(fetchedCard, 1.0, inputSize, outputSize));
     }
 
     public Cost costHashJoin(JoinNode jn) {

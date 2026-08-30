@@ -1,0 +1,64 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+USE test;
+// Forty rows in two well separated vector clusters: ids 1-20 sit near the origin, ids 21-40 near
+// [10,10,10,*]. `category` repeats every twenty rows, so an equality predicate on it keeps two rows.
+INSERT INTO Vec ([
+  {"id": 1, "year": 2001, "category": "c01", "embedding": [0.0, 0.0, 0.0, 0.1]},
+  {"id": 2, "year": 2002, "category": "c02", "embedding": [0.0, 0.0, 0.0, 0.2]},
+  {"id": 3, "year": 2003, "category": "c03", "embedding": [0.0, 0.0, 0.0, 0.3]},
+  {"id": 4, "year": 2004, "category": "c04", "embedding": [0.0, 0.0, 0.0, 0.4]},
+  {"id": 5, "year": 2005, "category": "c05", "embedding": [0.0, 0.0, 0.0, 0.5]},
+  {"id": 6, "year": 2006, "category": "c06", "embedding": [0.0, 0.0, 0.0, 0.6]},
+  {"id": 7, "year": 2007, "category": "c07", "embedding": [0.0, 0.0, 0.0, 0.7]},
+  {"id": 8, "year": 2008, "category": "c08", "embedding": [0.0, 0.0, 0.0, 0.8]},
+  {"id": 9, "year": 2009, "category": "c09", "embedding": [0.0, 0.0, 0.0, 0.9]},
+  {"id": 10, "year": 2010, "category": "c10", "embedding": [0.0, 0.0, 0.0, 1.0]},
+  {"id": 11, "year": 2011, "category": "c11", "embedding": [0.0, 0.0, 0.0, 1.1]},
+  {"id": 12, "year": 2012, "category": "c12", "embedding": [0.0, 0.0, 0.0, 1.2]},
+  {"id": 13, "year": 2013, "category": "c13", "embedding": [0.0, 0.0, 0.0, 1.3]},
+  {"id": 14, "year": 2014, "category": "c14", "embedding": [0.0, 0.0, 0.0, 1.4]},
+  {"id": 15, "year": 2015, "category": "c15", "embedding": [0.0, 0.0, 0.0, 1.5]},
+  {"id": 16, "year": 2016, "category": "c16", "embedding": [0.0, 0.0, 0.0, 1.6]},
+  {"id": 17, "year": 2017, "category": "c17", "embedding": [0.0, 0.0, 0.0, 1.7]},
+  {"id": 18, "year": 2018, "category": "c18", "embedding": [0.0, 0.0, 0.0, 1.8]},
+  {"id": 19, "year": 2019, "category": "c19", "embedding": [0.0, 0.0, 0.0, 1.9]},
+  {"id": 20, "year": 2020, "category": "c20", "embedding": [0.0, 0.0, 0.0, 2.0]},
+  {"id": 21, "year": 2021, "category": "c01", "embedding": [10.0, 10.0, 10.0, 0.1]},
+  {"id": 22, "year": 2022, "category": "c02", "embedding": [10.0, 10.0, 10.0, 0.2]},
+  {"id": 23, "year": 2023, "category": "c03", "embedding": [10.0, 10.0, 10.0, 0.3]},
+  {"id": 24, "year": 2024, "category": "c04", "embedding": [10.0, 10.0, 10.0, 0.4]},
+  {"id": 25, "year": 2025, "category": "c05", "embedding": [10.0, 10.0, 10.0, 0.5]},
+  {"id": 26, "year": 2026, "category": "c06", "embedding": [10.0, 10.0, 10.0, 0.6]},
+  {"id": 27, "year": 2027, "category": "c07", "embedding": [10.0, 10.0, 10.0, 0.7]},
+  {"id": 28, "year": 2028, "category": "c08", "embedding": [10.0, 10.0, 10.0, 0.8]},
+  {"id": 29, "year": 2029, "category": "c09", "embedding": [10.0, 10.0, 10.0, 0.9]},
+  {"id": 30, "year": 2030, "category": "c10", "embedding": [10.0, 10.0, 10.0, 1.0]},
+  {"id": 31, "year": 2031, "category": "c11", "embedding": [10.0, 10.0, 10.0, 1.1]},
+  {"id": 32, "year": 2032, "category": "c12", "embedding": [10.0, 10.0, 10.0, 1.2]},
+  {"id": 33, "year": 2033, "category": "c13", "embedding": [10.0, 10.0, 10.0, 1.3]},
+  {"id": 34, "year": 2034, "category": "c14", "embedding": [10.0, 10.0, 10.0, 1.4]},
+  {"id": 35, "year": 2035, "category": "c15", "embedding": [10.0, 10.0, 10.0, 1.5]},
+  {"id": 36, "year": 2036, "category": "c16", "embedding": [10.0, 10.0, 10.0, 1.6]},
+  {"id": 37, "year": 2037, "category": "c17", "embedding": [10.0, 10.0, 10.0, 1.7]},
+  {"id": 38, "year": 2038, "category": "c18", "embedding": [10.0, 10.0, 10.0, 1.8]},
+  {"id": 39, "year": 2039, "category": "c19", "embedding": [10.0, 10.0, 10.0, 1.9]},
+  {"id": 40, "year": 2040, "category": "c20", "embedding": [10.0, 10.0, 10.0, 2.0]}
+]);

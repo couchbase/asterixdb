@@ -1,0 +1,5 @@
+/index-search\("idx_cat", /
+/-- BTREE_SEARCH  \|PARTITIONED\|/
+-/VECTOR_SEARCH/
+-/idx_emb/
+-/data-scan \[\]<-\[.*\] <- test\.Vec/

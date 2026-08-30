@@ -31,7 +31,8 @@ public class ScanPlanNode extends AbstractPlanNode {
 
     public enum ScanMethod {
         INDEX_SCAN,
-        TABLE_SCAN
+        TABLE_SCAN,
+        VECTOR_SCAN
     }
 
     private ScanMethod scanOp;
@@ -62,6 +63,11 @@ public class ScanPlanNode extends AbstractPlanNode {
 
     void setScanMethod(ScanMethod sm) {
         this.scanOp = sm;
+    }
+
+    void setVectorScan(Index index) {
+        setScanMethod(ScanMethod.VECTOR_SCAN);
+        this.indexUsed = index;
     }
 
     void setScanCosts(ICost opCost) {

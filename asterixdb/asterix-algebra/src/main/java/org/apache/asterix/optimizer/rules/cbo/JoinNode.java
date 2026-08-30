@@ -52,6 +52,7 @@ import org.apache.asterix.optimizer.rules.am.IAccessMethod;
 import org.apache.asterix.optimizer.rules.am.IOptimizableFuncExpr;
 import org.apache.asterix.optimizer.rules.am.IntroduceJoinAccessMethodRule;
 import org.apache.asterix.optimizer.rules.am.IntroduceSelectAccessMethodRule;
+import org.apache.asterix.optimizer.rules.am.IntroduceTopKAccessMethodRule;
 import org.apache.commons.lang3.mutable.Mutable;
 import org.apache.commons.lang3.mutable.MutableObject;
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
@@ -114,6 +115,8 @@ public class JoinNode {
     protected AbstractLeafInput leafInput;
     protected Index.SampleIndexDetails idxDetails;
     private List<IndexCostInfo> indexCostInfoList;
+    private Collection<String> vectorIndexRejections;
+    private AbstractFunctionCallExpression annDistanceExpr;
     // The triple above is : Index, selectivity, and the index expression
     protected static int NO_JN = -1;
     protected static JoinNode DUMMY_JN = new JoinNode(NO_JN);
@@ -979,6 +982,91 @@ public class JoinNode {
         }
     }
 
+    /**
+     * Prices every vector index that could answer a top-k ANN query over this dataset and registers the
+     * cheapest of them as a plan for it, so it competes with the scan and index plans on cost. A tie goes
+     * to a plan already registered, which answers the query exactly rather than approximately.
+     *
+     * @param rootOp operator the top-k pattern is searched from
+     */
+    protected void addVectorIndexAccessPlans(ILogicalOperator rootOp) throws AlgebricksException {
+        record CostedIndex(Index index, ICost cost, double entryBytes) {
+            double totalCost() {
+                return cost.computeTotalCost();
+            }
+
+            String indexName() {
+                return index.getIndexName();
+            }
+        }
+
+        if (origCardinality <= 0) {
+            return;
+        }
+
+        List<IntroduceTopKAccessMethodRule.VectorIndexCandidate> candidates = new ArrayList<>();
+        new IntroduceTopKAccessMethodRule().collectVectorIndexCandidates(new MutableObject<>(rootOp), joinEnum.optCtx,
+                origCardinality, candidates);
+        if (candidates.isEmpty()) {
+            return;
+        }
+
+        annDistanceExpr = candidates.get(0).annDistanceExpr();
+        Collection<String> rejections = new HashSet<>();
+        SkipSecondaryIndexSearchExpressionAnnotation existing =
+                annDistanceExpr.getAnnotation(SkipSecondaryIndexSearchExpressionAnnotation.class);
+        if (existing != null && existing.getIndexNames() != null) {
+            rejections.addAll(existing.getIndexNames());
+        }
+
+        List<CostedIndex> costedIndexes = new ArrayList<>();
+        for (IntroduceTopKAccessMethodRule.VectorIndexCandidate candidate : candidates) {
+            ICost cost = joinEnum.getCostMethodsHandle().costVectorIndexScan(candidate.geometry(),
+                    candidate.fetchedCard(), getInputSize(), getOutputSize());
+            costedIndexes.add(new CostedIndex(candidate.index(), cost, candidate.geometry().getEntryBytes()));
+            rejections.add(candidate.index().getIndexName());
+        }
+        vectorIndexRejections = rejections;
+
+        // Narrower entries break a cost tie, then the name, so repeated compilations agree.
+        costedIndexes.sort(Comparator.comparingDouble(CostedIndex::totalCost)
+                .thenComparingDouble(CostedIndex::entryBytes).thenComparing(CostedIndex::indexName));
+        CostedIndex cheapest = costedIndexes.get(0);
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Cheapest vector index for {} is {}, priced at {}.", datasetNames.get(0),
+                    cheapest.indexName(), cheapest.totalCost());
+        }
+
+        boolean forceEnum = level <= joinEnum.cboFullEnumLevel;
+        if (cheapest.cost().costLT(this.cheapestPlanCost) || forceEnum) {
+            ScanPlanNode pn = new ScanPlanNode(datasetNames.get(0), leafInput.getOp(), this);
+            pn.setVectorScan(cheapest.index());
+            pn.setScanCosts(cheapest.cost());
+            planRegistry.addPlan(pn);
+            setCheapestPlan(pn, forceEnum);
+        }
+    }
+
+    /**
+     * Rejects the vector indexes the chosen scan does not use, which is every one of them unless the
+     * chosen scan is itself a vector scan. Runs once a plan has been chosen for this dataset, since which
+     * scan won is what decides the rejections.
+     *
+     * @param chosenScan scan the chosen plan reads this dataset with
+     */
+    void setSkipIndexAnnotationsForVectorChoice(ScanPlanNode chosenScan) {
+        if (vectorIndexRejections == null) {
+            return;
+        }
+        if (chosenScan.getScanOp() == ScanPlanNode.ScanMethod.VECTOR_SCAN) {
+            vectorIndexRejections.remove(chosenScan.getSoleAccessIndex().getIndexName());
+        }
+        if (!vectorIndexRejections.isEmpty()) {
+            EnumerateJoinsRule.setAnnotation(annDistanceExpr,
+                    SkipSecondaryIndexSearchExpressionAnnotation.newInstance(vectorIndexRejections));
+        }
+    }
+
     // check if the left side or the right side is the preserving side.
     // The preserving side has to be the probe side (which is the left side since our engine builds from the right side)
     // R LOJ S -- R is the preserving side; S is the null extending side.
@@ -1709,7 +1797,7 @@ public class JoinNode {
                         if (scanPlanNode.getScanOp() == ScanPlanNode.ScanMethod.TABLE_SCAN) {
                             sb.append("DATA_SOURCE_SCAN").append('\n');
                         } else {
-                            sb.append("INDEX_SCAN").append('\n');
+                            sb.append(scanPlanNode.getScanOp()).append('\n');
                         }
                     }
                 } else {

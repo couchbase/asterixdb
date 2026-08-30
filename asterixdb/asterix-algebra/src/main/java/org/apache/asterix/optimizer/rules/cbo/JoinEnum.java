@@ -1233,6 +1233,10 @@ public class JoinEnum {
             // We may not add any index plans, so need to check for NO_PLAN
             jn.addIndexAccessPlans(EnumerateJoinsRule.removeTrue(leafInput), indexProvider);
         }
+
+        if (this.numberOfTerms == 1 && !cboTestMode) {
+            jnArray[1].addVectorIndexAccessPlans(this.op);
+        }
         return this.numberOfTerms;
     }
 

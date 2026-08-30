@@ -1373,7 +1373,9 @@ public class EnumerateJoinsRule implements IAlgebraicRewriteRule {
     }
 
     private void skipAllIndexes(ScanPlanNode plan, ILogicalOperator leafInput) {
-        if (plan.getScanOp() == ScanPlanNode.ScanMethod.TABLE_SCAN
+        plan.getJoinNode().setSkipIndexAnnotationsForVectorChoice(plan);
+        if ((plan.getScanOp() == ScanPlanNode.ScanMethod.TABLE_SCAN
+                || plan.getScanOp() == ScanPlanNode.ScanMethod.VECTOR_SCAN)
                 && leafInput.getOperatorTag() == LogicalOperatorTag.SELECT) {
             SelectOperator selOper = (SelectOperator) leafInput;
             ILogicalExpression expr = selOper.getCondition().getValue();

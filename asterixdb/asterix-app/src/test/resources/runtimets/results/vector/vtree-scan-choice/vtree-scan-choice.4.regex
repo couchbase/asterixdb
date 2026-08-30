@@ -1,0 +1,5 @@
+/-- VECTOR_SEARCH  \|PARTITIONED\|/
+/index-search\("idx_emb", .*\) condition \(lt\(\$\$\d+, 2010\)\)/
+-/-- STREAM_SELECT/
+-/data-scan \[\]<-\[.*\] <- test\.Vec/
+-/idx_cat/

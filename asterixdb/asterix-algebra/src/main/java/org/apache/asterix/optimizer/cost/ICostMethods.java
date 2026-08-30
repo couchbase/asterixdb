@@ -33,6 +33,8 @@ public interface ICostMethods {
 
     Cost costIndexScan(JoinNode jn, double indexSel);
 
+    Cost costVectorIndexScan(VectorIndexGeometry geometry, double fetchedCard, double inputSize, double outputSize);
+
     Cost costHashJoin(JoinNode currentJn);
 
     Cost costBroadcastHashJoin(JoinNode currentJn);

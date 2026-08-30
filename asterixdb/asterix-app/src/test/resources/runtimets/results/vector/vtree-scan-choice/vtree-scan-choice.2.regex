@@ -1,0 +1,5 @@
+/data-scan \[\]<-\[.*\] <- test\.Vec/
+/-- DATASOURCE_SCAN  \|PARTITIONED\|/
+/-- STABLE_SORT \[topK: 3\]/
+-/VECTOR_SEARCH/
+-/idx_emb/

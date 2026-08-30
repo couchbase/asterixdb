@@ -19,6 +19,7 @@
 package org.apache.asterix.optimizer.rules.am;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -28,16 +29,21 @@ import java.util.Set;
 import java.util.TreeMap;
 
 import org.apache.asterix.common.annotations.AnnSearchPreferenceAnnotation;
+import org.apache.asterix.common.annotations.SkipSecondaryIndexSearchExpressionAnnotation;
 import org.apache.asterix.common.config.DatasetConfig.IndexType;
 import org.apache.asterix.common.vector.VectorSimilarityMetric;
 import org.apache.asterix.metadata.declared.IIndexProvider;
 import org.apache.asterix.metadata.declared.MetadataProvider;
 import org.apache.asterix.metadata.entities.Index;
 import org.apache.asterix.metadata.utils.DatasetUtil;
+import org.apache.asterix.metadata.utils.KeyFieldTypeUtil;
 import org.apache.asterix.om.base.AString;
 import org.apache.asterix.om.base.IAObject;
 import org.apache.asterix.om.constants.AsterixConstantValue;
 import org.apache.asterix.om.functions.BuiltinFunctions;
+import org.apache.asterix.om.types.IAType;
+import org.apache.asterix.om.utils.ConstantExpressionUtil;
+import org.apache.asterix.optimizer.cost.VectorIndexGeometry;
 import org.apache.commons.lang3.mutable.Mutable;
 import org.apache.commons.lang3.mutable.MutableObject;
 import org.apache.hyracks.algebricks.common.exceptions.AlgebricksException;
@@ -92,6 +98,11 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
     protected IVariableTypeEnvironment typeEnvironment = null;
     protected final OptimizableOperatorSubTree subTree = new OptimizableOperatorSubTree();
     protected VectorSimilarityMetric queryDistanceMetric = null;
+
+    // Search effort the ANN hint asks for, which is what a vector plan costs rather than anything the
+    // optimizer chooses. Unset until the hint is read.
+    protected double queryMinProbeFraction = 0;
+    protected int queryKMultiplier = 0;
 
     // SELECT operator info for filter pushdown
     protected SelectOperator selectOp = null;
@@ -150,12 +161,30 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
         return planTransformed;
     }
 
+    @FunctionalInterface
+    protected interface TopKMatchAction {
+        boolean apply(IOptimizationContext context) throws AlgebricksException;
+    }
+
     /**
      * Recursively checks the plan for LIMIT → ORDER BY ANN_DISTANCE pattern
      * and applies vector index optimization if applicable.
      */
     protected boolean checkAndApplyTopKTransformation(Mutable<ILogicalOperator> opRef, IOptimizationContext context)
             throws AlgebricksException {
+        return matchTopKPattern(opRef, context, this::analyzeAndTransform);
+    }
+
+    /**
+     * Recursively looks for the LIMIT → ORDER BY ANN_DISTANCE pattern and runs the action on the first
+     * match.
+     *
+     * @param opRef operator to search from
+     * @param context the optimization context
+     * @param action what to run once the pattern matches
+     */
+    protected boolean matchTopKPattern(Mutable<ILogicalOperator> opRef, IOptimizationContext context,
+            TopKMatchAction action) throws AlgebricksException {
 
         AbstractLogicalOperator op = (AbstractLogicalOperator) opRef.getValue();
 
@@ -178,7 +207,7 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
                 // truncated/empty results. Fall through to the exact ORDER BY ... LIMIT plan, which honors
                 // OFFSET correctly. (A future enhancement could size the search to (k + offset).)
                 if (!limitOp.hasOffset() && matchesAnnDistancePattern()) {
-                    return analyzeAndTransform(context);
+                    return action.apply(context);
                 }
             }
         }
@@ -188,8 +217,8 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
         aboveLimitOps.add(op);
         try {
             for (Mutable<ILogicalOperator> inputOpRef : op.getInputs()) {
-                boolean transformed = checkAndApplyTopKTransformation(inputOpRef, context);
-                if (transformed) {
+                boolean matched = matchTopKPattern(inputOpRef, context, action);
+                if (matched) {
                     return true;
                 }
             }
@@ -271,6 +300,40 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
      * Analyzes the pattern and attempts to apply vector index transformation.
      */
     protected boolean analyzeAndTransform(IOptimizationContext context) throws AlgebricksException {
+        Map<IAccessMethod, AccessMethodAnalysisContext> analyzedAMs = new TreeMap<>();
+        List<Pair<IAccessMethod, Index>> chosenIndexes = new ArrayList<>();
+        if (!analyzeApplicability(context, analyzedAMs, chosenIndexes)) {
+            return false;
+        }
+
+        if (chosenIndexes.isEmpty()) {
+            // No vector index left: either none exists, none has the required INCLUDE fields, or the
+            // cost-based optimizer priced them all above the scan. Fall back to data scan + sort.
+            context.addToDontApplySet(this, limitOp);
+            return false;
+        }
+
+        Index vectorIndex = chosenIndexes.get(0).second;
+        AccessMethodAnalysisContext analysisCtx = analyzedAMs.get(VectorIndexAccessMethod.INSTANCE);
+
+        boolean transformed = applyTopKPlanTransformation(vectorIndex, analysisCtx, context);
+
+        // Always mark as processed to avoid re-attempting optimization on this operator
+        context.addToDontApplySet(this, limitOp);
+
+        return transformed;
+    }
+
+    /**
+     * Works out which vector indexes can answer the matched pattern, leaving the plan untouched.
+     *
+     * @param context the optimization context
+     * @param analyzedAMs filled with the access-method analysis backing the chosen indexes
+     * @param chosenIndexes filled with the applicable indexes, empty when none apply
+     */
+    protected boolean analyzeApplicability(IOptimizationContext context,
+            Map<IAccessMethod, AccessMethodAnalysisContext> analyzedAMs, List<Pair<IAccessMethod, Index>> chosenIndexes)
+            throws AlgebricksException {
         // 1. Initialize subtree from ORDER down to DATASOURCE_SCAN
         if (!initializeSubTree()) {
             return false;
@@ -293,7 +356,6 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
         findSelectOperatorInSubTree();
 
         // 5. Analyze ANN_DISTANCE function arguments
-        Map<IAccessMethod, AccessMethodAnalysisContext> analyzedAMs = new TreeMap<>();
         if (!analyzeAnnDistanceFunction(analyzedAMs, context)) {
             return false;
         }
@@ -301,27 +363,11 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
         // 6. Find applicable vector indexes on the dataset
         fillSubTreeIndexExprs(subTree, analyzedAMs, context, false);
 
-        // 7. Choose best vector index (considering INCLUDE fields if filter exists)
-        List<Pair<IAccessMethod, Index>> chosenIndexes = new ArrayList<>();
+        // 7. Choose best vector index (considering INCLUDE fields if filter exists), minus the ones the
+        // cost-based optimizer already ruled out.
         chooseVectorIndex(analyzedAMs, chosenIndexes);
 
-        if (chosenIndexes.isEmpty()) {
-            // No vector index available (either none exists, or none has required INCLUDE fields).
-            // Fall back to data scan + sort.
-            context.addToDontApplySet(this, limitOp);
-            return false;
-        }
-
-        // 8. Apply plan transformation
-        Index vectorIndex = chosenIndexes.get(0).second;
-        AccessMethodAnalysisContext analysisCtx = analyzedAMs.get(VectorIndexAccessMethod.INSTANCE);
-
-        boolean transformed = applyTopKPlanTransformation(vectorIndex, analysisCtx, context);
-
-        // Always mark as processed to avoid re-attempting optimization on this operator
-        context.addToDontApplySet(this, limitOp);
-
-        return transformed;
+        return true;
     }
 
     /**
@@ -593,6 +639,8 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
         AnnSearchPreferenceAnnotation annHint = annDistanceExpr.getAnnotation(AnnSearchPreferenceAnnotation.class);
         if (annHint != null) {
             queryDistanceMetric = VectorIndexAccessMethod.resolveQueryMetric(annHint.getMetric());
+            queryMinProbeFraction = annHint.getMinProbeFraction();
+            queryKMultiplier = annHint.getKMultiplier();
         }
 
         // Now analyze the ANN_DISTANCE function arguments
@@ -668,6 +716,16 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
         return funcExpr.hasAnnotation(AnnSearchPreferenceAnnotation.class);
     }
 
+    private boolean isRuledOutByCost(Index index) {
+        SkipSecondaryIndexSearchExpressionAnnotation skipAnnotation =
+                annDistanceExpr.getAnnotation(SkipSecondaryIndexSearchExpressionAnnotation.class);
+        if (skipAnnotation == null) {
+            return false;
+        }
+        Collection<String> rejected = skipAnnotation.getIndexNames();
+        return rejected == null || rejected.contains(index.getIndexName());
+    }
+
     /**
      * Chooses the best vector index from candidates.
      * Considers:
@@ -690,7 +748,9 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
         Iterator<Map.Entry<Index, List<Pair<Integer, Integer>>>> indexIt =
                 analysisCtx.getIteratorForIndexExprsAndVars();
 
-        Pair<IAccessMethod, Index> exactMatch = null; // Index with matching field, metric, AND INCLUDE fields
+        // Every index whose field, metric and INCLUDE fields all match. More than one can qualify, so
+        // they are collected rather than settled here: the cheapest is picked once they are costed.
+        List<Pair<IAccessMethod, Index>> exactMatches = new ArrayList<>();
         Pair<IAccessMethod, Index> fieldMatch = null; // Index with matching field only (and INCLUDE if needed)
 
         while (indexIt.hasNext()) {
@@ -698,6 +758,10 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
             Index index = indexEntry.getKey();
 
             if (index.getIndexType() == IndexType.VTREE) {
+                if (isRuledOutByCost(index)) {
+                    continue;
+                }
+
                 // If query has filter, index must have all filter fields in its INCLUDE list.
                 if (hasFilter && !indexHasIncludeFields(index, filterFieldNames)) {
                     continue;
@@ -707,8 +771,7 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
                     VectorSimilarityMetric indexMetric = VectorIndexAccessMethod.getIndexMetric(index);
                     if (queryDistanceMetric == indexMetric) {
                         // Exact match: field name AND distance metric match.
-                        exactMatch = new Pair<>(VectorIndexAccessMethod.INSTANCE, index);
-                        break;
+                        exactMatches.add(new Pair<>(VectorIndexAccessMethod.INSTANCE, index));
                     } else if (fieldMatch == null) {
                         // Field matches but metric doesn't - store as fallback only if no exact match.
                         fieldMatch = new Pair<>(VectorIndexAccessMethod.INSTANCE, index);
@@ -727,14 +790,87 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
         }
 
         // Prefer exact match. If only a field match exists (metric mismatch), fall back to full scan (KNN).
-        if (exactMatch != null) {
-            result.add(exactMatch);
+        if (!exactMatches.isEmpty()) {
+            result.addAll(exactMatches);
         } else if (fieldMatch != null) {
             Index idx = fieldMatch.second;
             VectorSimilarityMetric indexMetric = VectorIndexAccessMethod.getIndexMetric(idx);
             LOGGER.warn("Distance metric mismatch: query uses '{}' but index '{}' uses '{}'. "
                     + "Falling back to full scan (KNN).", queryDistanceMetric, idx.getIndexName(), indexMetric);
         }
+    }
+
+    public record VectorIndexCandidate(Index index, VectorIndexGeometry geometry, double fetchedCard,
+            AbstractFunctionCallExpression annDistanceExpr) {
+    }
+
+    /**
+     * Collects every vector index that could answer a top-k ANN pattern under the given operator,
+     * leaving the plan untouched. Lets a cost-based caller price the alternatives before this rule runs
+     *
+     * @param opRef operator to search from
+     * @param context the optimization context
+     * @param datasetCardinality rows in the dataset; the index holds an entry per row whatever the query filters
+     * @param candidates filled with the applicable indexes, left empty when none apply
+     */
+    public boolean collectVectorIndexCandidates(Mutable<ILogicalOperator> opRef, IOptimizationContext context,
+            double datasetCardinality, List<VectorIndexCandidate> candidates) throws AlgebricksException {
+        clear();
+        setMetadataIndexDeclarations(context, (IIndexProvider) context.getMetadataProvider());
+        return matchTopKPattern(opRef, context, ctx -> describeCandidates(ctx, datasetCardinality, candidates));
+    }
+
+    /**
+     * Analyzes the matched pattern and describes each applicable index in costable terms.
+     *
+     * @param context the optimization context
+     * @param datasetCardinality rows in the dataset; the index holds an entry per row whatever the query filters
+     * @param candidates filled with the applicable indexes
+     */
+    private boolean describeCandidates(IOptimizationContext context, double datasetCardinality,
+            List<VectorIndexCandidate> candidates) throws AlgebricksException {
+        Map<IAccessMethod, AccessMethodAnalysisContext> analyzedAMs = new TreeMap<>();
+        List<Pair<IAccessMethod, Index>> chosenIndexes = new ArrayList<>();
+        if (!analyzeApplicability(context, analyzedAMs, chosenIndexes) || chosenIndexes.isEmpty()) {
+            return false;
+        }
+
+        Long topK = integralConstant(limitOp.getMaxObjects().getValue());
+        if (topK == null || queryKMultiplier <= 0) {
+            return false;
+        }
+
+        MetadataProvider metadataProvider = (MetadataProvider) context.getMetadataProvider();
+        List<IAType> primaryKeyTypes = KeyFieldTypeUtil.getPartitoningKeyTypes(subTree.getDataset(),
+                subTree.getRecordType(), subTree.getMetaRecordType());
+        if (primaryKeyTypes == null) {
+            return false;
+        }
+        int numPartitions = metadataProvider.getPartitioningProperties(subTree.getDataset()).getNumberOfPartitions();
+        long pageSize = metadataProvider.getStorageProperties().getBufferCachePageSize();
+
+        // The search collects this many candidates either way; an index-only plan then reads the distance
+        // off the cursor rather than fetching and reranking them.
+        double candidateCard = (double) topK * queryKMultiplier;
+        double fetchedCard = isProjectionPkOnly() ? 0 : candidateCard;
+
+        for (Pair<IAccessMethod, Index> candidate : chosenIndexes) {
+            Index.VectorIndexDetails details = (Index.VectorIndexDetails) candidate.second.getIndexDetails();
+            VectorIndexGeometry geometry = new VectorIndexGeometry(details.getVectorParameters(),
+                    details.getIncludeFieldTypes(), primaryKeyTypes, datasetCardinality, numPartitions, pageSize,
+                    queryMinProbeFraction, candidateCard);
+            candidates.add(new VectorIndexCandidate(candidate.second, geometry, fetchedCard, annDistanceExpr));
+        }
+        return true;
+    }
+
+    private static Long integralConstant(ILogicalExpression expr) {
+        Long asLong = ConstantExpressionUtil.getLongConstant(expr);
+        if (asLong != null) {
+            return asLong;
+        }
+        Integer asInt = ConstantExpressionUtil.getIntConstant(expr);
+        return asInt == null ? null : asInt.longValue();
     }
 
     /**
@@ -1053,6 +1189,8 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
         annDistanceExpr = null;
         typeEnvironment = null;
         queryDistanceMetric = null;
+        queryMinProbeFraction = 0;
+        queryKMultiplier = 0;
         selectOp = null;
         filterFieldNames = null;
         aboveLimitOps.clear();
