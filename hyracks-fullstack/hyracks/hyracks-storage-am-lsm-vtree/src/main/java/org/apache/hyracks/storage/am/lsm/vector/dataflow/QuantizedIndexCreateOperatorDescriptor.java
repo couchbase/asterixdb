@@ -78,6 +78,8 @@ public class QuantizedIndexCreateOperatorDescriptor extends AbstractSingleActivi
         private final FrameTupleAccessor tupleAccessor;
         private final FrameTupleReference tupleHelper;
         private VTreeQuantizationParams quantizationParams;
+        /** An empty parameter block means the sample produced nothing. See extractQuantizationParams. */
+        private boolean receivedEmptyPayload;
         private boolean failed;
 
         public QuantizedIndexCreateOperatorNodePushable(IHyracksTaskContext ctx, IIndexBuilder[] indexBuilders,
@@ -133,13 +135,20 @@ public class QuantizedIndexCreateOperatorDescriptor extends AbstractSingleActivi
             ByteArrayPointable ptr = new ByteArrayPointable();
             ptr.set(data, start + 1, length - 1);
             int contentLength = ptr.getContentLength();
-            // The global aggregate emits either the full parameter block or nothing, and nothing means the
-            // sample yielded no usable vector.
+            // The global aggregate emits either the full parameter block or nothing; nothing means no record
+            // reached the build. Recorded here and reported once from close() rather than per partition.
+            if (contentLength == 0) {
+                receivedEmptyPayload = true;
+                // The global GroupAll aggregate emits a tuple even on empty input, so "no rows reached the
+                // build" arrives here as an empty payload rather than as a failure. Report it once from
+                // close() rather than per partition.
+                return null;
+            }
             if (contentLength < PARAMS_PAYLOAD_BYTES) {
+                // A non-empty but truncated payload is a genuine corruption rather than an empty sample.
                 throw HyracksDataException.create(ErrorCode.VECTOR_INDEX_BUILD_FAILED,
-                        "The sampled records yielded no usable vector for the indexed field: it may be missing, "
-                                + "null or not a list in every sampled record, the dataset may be empty, or no "
-                                + "sampled vector may match the dimension the index declares.");
+                        "The quantization parameter block is truncated: got " + contentLength + " byte(s), need "
+                                + PARAMS_PAYLOAD_BYTES + ".");
             }
 
             // Big-endian; DataInputStream is the exact inverse of the DataOutput/ByteBuffer writer and
@@ -176,6 +185,18 @@ public class QuantizedIndexCreateOperatorDescriptor extends AbstractSingleActivi
                 for (IIndexBuilder indexBuilder : indexBuilders) {
                     indexBuilder.build();
                 }
+            } else if (receivedEmptyPayload) {
+                // No record survived the usable-vector filter, so there is nothing to compute quantization
+                // constants from. This is the only place that reports it: the filter drops rows silently by
+                // design and every stage downstream of it assumes valid input.
+                throw HyracksDataException.create(ErrorCode.VECTOR_INDEX_BUILD_FAILED,
+                        "The sampled records yielded no usable vector for the indexed field: it may be missing, "
+                                + "null or not a list in every sampled record, the dataset may be empty, or no "
+                                + "sampled vector may match the dimension the index declares. Run "
+                                + "SELECT COUNT(*) FROM <collection> WHERE NOT isvector(<field>, <dimension>) "
+                                + "to count the records that cannot be indexed, and "
+                                + "SELECT DISTINCT array_count(<field>) FROM <collection> to see which "
+                                + "dimensions the data actually holds.");
             } else {
                 throw HyracksDataException.create(ErrorCode.VECTOR_INDEX_BUILD_FAILED,
                         "No quantization constants were received");

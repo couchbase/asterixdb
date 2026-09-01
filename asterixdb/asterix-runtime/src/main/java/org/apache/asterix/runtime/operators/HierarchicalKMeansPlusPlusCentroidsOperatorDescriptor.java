@@ -428,7 +428,6 @@ public final class HierarchicalKMeansPlusPlusCentroidsOperatorDescriptor extends
 
                         in = resetRunFileReader(ctx, sampleUUID, partition);
                         VSizeFrame frame = new VSizeFrame(ctx);
-                        int tempIdx = 0;
 
                         while (in.nextFrame(frame)) {
                             ByteBuffer buffer = frame.getBuffer();
@@ -438,19 +437,9 @@ public final class HierarchicalKMeansPlusPlusCentroidsOperatorDescriptor extends
                             for (int j = 0; j < tupleCount; j++) {
                                 tuple.reset(fta, j);
                                 eval.evaluate(tuple, inputVal);
-                                if (!ATYPETAGDESERIALIZER
-                                        .deserialize(inputVal.getByteArray()[inputVal.getStartOffset()]).isListType()) {
-                                    tempIdx++;
-                                    continue;
-                                }
-
                                 listAccessorConstant.reset(inputVal.getByteArray(), inputVal.getStartOffset());
                                 try {
                                     double[] point = kMeansUtils.createPrimitiveList(listAccessorConstant);
-                                    if (!hasIndexDimension(point)) {
-                                        tempIdx++;
-                                        continue;
-                                    }
                                     // Compute D(x) = min distance to current centers
                                     double minDist = Double.POSITIVE_INFINITY;
                                     for (double[] center : currentCenters) {
@@ -463,7 +452,6 @@ public final class HierarchicalKMeansPlusPlusCentroidsOperatorDescriptor extends
                                 } catch (IOException e) {
                                     throw HyracksDataException.create(e);
                                 }
-                                tempIdx++;
                             }
                         }
 
@@ -474,7 +462,6 @@ public final class HierarchicalKMeansPlusPlusCentroidsOperatorDescriptor extends
                         // PASS 2: Stream again, recompute D(x), and sample probabilistically
                         in = resetRunFileReader(ctx, sampleUUID, partition);
                         frame = new VSizeFrame(ctx);
-                        int currentIdx = 0;
                         int sampledCount = 0;
 
                         while (in.nextFrame(frame)) {
@@ -485,20 +472,9 @@ public final class HierarchicalKMeansPlusPlusCentroidsOperatorDescriptor extends
                             for (int j = 0; j < tupleCount; j++) {
                                 tuple.reset(fta, j);
                                 eval.evaluate(tuple, inputVal);
-                                if (!ATYPETAGDESERIALIZER
-                                        .deserialize(inputVal.getByteArray()[inputVal.getStartOffset()]).isListType()) {
-                                    currentIdx++;
-                                    continue;
-                                }
-
                                 listAccessorConstant.reset(inputVal.getByteArray(), inputVal.getStartOffset());
                                 try {
                                     double[] point = kMeansUtils.createPrimitiveList(listAccessorConstant);
-                                    if (!hasIndexDimension(point)) {
-                                        currentIdx++;
-                                        continue;
-                                    }
-
                                     // RECOMPUTE D(x) (no storage from pass 1)
                                     double minDist = Double.POSITIVE_INFINITY;
                                     for (double[] center : currentCenters) {
@@ -518,7 +494,6 @@ public final class HierarchicalKMeansPlusPlusCentroidsOperatorDescriptor extends
                                 } catch (IOException e) {
                                     throw HyracksDataException.create(e);
                                 }
-                                currentIdx++;
                             }
                         }
 
@@ -537,7 +512,6 @@ public final class HierarchicalKMeansPlusPlusCentroidsOperatorDescriptor extends
 
                     in = resetRunFileReader(ctx, sampleUUID, partition);
                     VSizeFrame weightFrame = new VSizeFrame(ctx);
-                    int weightIdx = 0;
 
                     while (in.nextFrame(weightFrame)) {
                         ByteBuffer buffer = weightFrame.getBuffer();
@@ -547,20 +521,9 @@ public final class HierarchicalKMeansPlusPlusCentroidsOperatorDescriptor extends
                         for (int j = 0; j < tupleCount; j++) {
                             tuple.reset(fta, j);
                             eval.evaluate(tuple, inputVal);
-                            if (!ATYPETAGDESERIALIZER.deserialize(inputVal.getByteArray()[inputVal.getStartOffset()])
-                                    .isListType()) {
-                                weightIdx++;
-                                continue;
-                            }
-
                             listAccessorConstant.reset(inputVal.getByteArray(), inputVal.getStartOffset());
                             try {
                                 double[] point = kMeansUtils.createPrimitiveList(listAccessorConstant);
-                                if (!hasIndexDimension(point)) {
-                                    weightIdx++;
-                                    continue;
-                                }
-
                                 // Find nearest candidate (recompute distance)
                                 double minDist = Double.POSITIVE_INFINITY;
                                 int nearestCandidate = -1;
@@ -577,7 +540,6 @@ public final class HierarchicalKMeansPlusPlusCentroidsOperatorDescriptor extends
                             } catch (IOException e) {
                                 throw HyracksDataException.create(e);
                             }
-                            weightIdx++;
                         }
                     }
 
@@ -702,20 +664,9 @@ public final class HierarchicalKMeansPlusPlusCentroidsOperatorDescriptor extends
                             for (int j = 0; j < tupleCount; j++) {
                                 tuple.reset(fta, j);
                                 eval.evaluate(tuple, inputVal);
-                                if (!ATYPETAGDESERIALIZER
-                                        .deserialize(inputVal.getByteArray()[inputVal.getStartOffset()]).isListType()) {
-                                    currentIdx++;
-                                    continue;
-                                }
-
                                 listAccessorConstant.reset(inputVal.getByteArray(), inputVal.getStartOffset());
                                 try {
                                     double[] point = kMeansUtils.createPrimitiveList(listAccessorConstant);
-                                    if (!hasIndexDimension(point)) {
-                                        currentIdx++;
-                                        continue;
-                                    }
-
                                     // Find closest centroid
                                     double minDist = Double.POSITIVE_INFINITY;
                                     int closestCentroid = 0;
@@ -752,20 +703,9 @@ public final class HierarchicalKMeansPlusPlusCentroidsOperatorDescriptor extends
                             for (int j = 0; j < tupleCount; j++) {
                                 tuple.reset(fta, j);
                                 eval.evaluate(tuple, inputVal);
-                                if (!ATYPETAGDESERIALIZER
-                                        .deserialize(inputVal.getByteArray()[inputVal.getStartOffset()]).isListType()) {
-                                    currentIdx++;
-                                    continue;
-                                }
-
                                 listAccessorConstant.reset(inputVal.getByteArray(), inputVal.getStartOffset());
                                 try {
                                     double[] point = kMeansUtils.createPrimitiveList(listAccessorConstant);
-                                    if (!hasIndexDimension(point)) {
-                                        currentIdx++;
-                                        continue;
-                                    }
-
                                     int centroidIdx = assignments[currentIdx];
                                     for (int d = 0; d < point.length; d++) {
                                         newCentroids[centroidIdx][d] += point[d];

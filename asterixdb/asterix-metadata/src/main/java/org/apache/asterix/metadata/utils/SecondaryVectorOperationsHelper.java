@@ -22,6 +22,7 @@ import static org.apache.asterix.om.types.ATypeTag.ARRAY;
 import static org.apache.asterix.om.types.BuiltinType.*;
 import static org.apache.asterix.om.utils.ProjectionFiltrationTypeUtil.ALL_FIELDS_TYPE;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -37,16 +38,21 @@ import org.apache.asterix.common.vector.VectorSimilarityMetric;
 import org.apache.asterix.dataflow.data.common.AOrderedListVectorBinaryAccessorFactory;
 import org.apache.asterix.external.indexing.IndexingConstants;
 import org.apache.asterix.formats.base.IDataFormat;
+import org.apache.asterix.formats.nontagged.BinaryBooleanInspector;
+import org.apache.asterix.formats.nontagged.SerializerDeserializerProvider;
 import org.apache.asterix.metadata.declared.MetadataProvider;
 import org.apache.asterix.metadata.entities.Dataset;
 import org.apache.asterix.metadata.entities.Index;
 import org.apache.asterix.metadata.entities.InternalDatasetDetails;
+import org.apache.asterix.om.base.AInt32;
 import org.apache.asterix.om.pointables.base.DefaultOpenFieldType;
 import org.apache.asterix.om.types.AOrderedListType;
 import org.apache.asterix.om.types.ARecordType;
+import org.apache.asterix.om.types.BuiltinType;
 import org.apache.asterix.om.types.IAType;
 import org.apache.asterix.om.vector.VectorIndexParameters;
 import org.apache.asterix.runtime.aggregates.std.QuantizationConstantsAggregateDescriptor;
+import org.apache.asterix.runtime.evaluators.functions.IsVectorDescriptor;
 import org.apache.asterix.runtime.operators.HierarchicalKMeansPlusPlusCentroidsOperatorDescriptor;
 import org.apache.asterix.runtime.operators.LSMIndexBulkLoadOperatorDescriptor;
 import org.apache.asterix.runtime.operators.LSMIndexBulkLoadOperatorDescriptor.BulkLoadUsage;
@@ -68,9 +74,11 @@ import org.apache.hyracks.algebricks.runtime.base.IAggregateEvaluatorFactory;
 import org.apache.hyracks.algebricks.runtime.base.IPushRuntimeFactory;
 import org.apache.hyracks.algebricks.runtime.base.IScalarEvaluatorFactory;
 import org.apache.hyracks.algebricks.runtime.evaluators.ColumnAccessEvalFactory;
+import org.apache.hyracks.algebricks.runtime.evaluators.ConstantEvalFactory;
 import org.apache.hyracks.algebricks.runtime.operators.aggreg.SimpleAlgebricksAccumulatingAggregatorFactory;
 import org.apache.hyracks.algebricks.runtime.operators.base.SinkRuntimeFactory;
 import org.apache.hyracks.algebricks.runtime.operators.meta.AlgebricksMetaOperatorDescriptor;
+import org.apache.hyracks.algebricks.runtime.operators.std.StreamSelectRuntimeFactory;
 import org.apache.hyracks.api.dataflow.IOperatorDescriptor;
 import org.apache.hyracks.api.dataflow.value.IBinaryComparatorFactory;
 import org.apache.hyracks.api.dataflow.value.IBinaryHashFunctionFactory;
@@ -78,12 +86,14 @@ import org.apache.hyracks.api.dataflow.value.ISerializerDeserializer;
 import org.apache.hyracks.api.dataflow.value.ITuplePartitionerFactory;
 import org.apache.hyracks.api.dataflow.value.ITypeTraits;
 import org.apache.hyracks.api.dataflow.value.RecordDescriptor;
+import org.apache.hyracks.api.exceptions.HyracksDataException;
 import org.apache.hyracks.api.exceptions.SourceLocation;
 import org.apache.hyracks.api.job.JobSpecification;
 import org.apache.hyracks.data.std.accessors.DoubleBinaryComparatorFactory;
 import org.apache.hyracks.data.std.accessors.IntegerBinaryComparatorFactory;
 import org.apache.hyracks.data.std.primitive.FixedLengthTypeTrait;
 import org.apache.hyracks.data.std.primitive.VarLengthTypeTrait;
+import org.apache.hyracks.data.std.util.ArrayBackedValueStorage;
 import org.apache.hyracks.dataflow.common.data.marshalling.ByteArraySerializerDeserializer;
 import org.apache.hyracks.dataflow.common.data.marshalling.DoubleSerializerDeserializer;
 import org.apache.hyracks.dataflow.common.data.marshalling.IntegerSerializerDeserializer;
@@ -106,6 +116,7 @@ import org.apache.hyracks.storage.am.vector.api.IVTreeBinaryAccessorFactory;
 import org.apache.hyracks.storage.common.IResourceFactory;
 import org.apache.hyracks.storage.common.IStorageManager;
 import org.apache.hyracks.storage.common.projection.ITupleProjectorFactory;
+import org.apache.hyracks.util.annotations.AiProvenance;
 
 public class SecondaryVectorOperationsHelper extends SecondaryTreeIndexOperationsHelper {
 
@@ -228,6 +239,13 @@ public class SecondaryVectorOperationsHelper extends SecondaryTreeIndexOperation
 
         sourceOp = targetOp;
         // primary index -> cast assign op (produces the secondary index entry)
+        // Filter before the assign: the record still carries type tags here, while the
+        // secondary tuple the assign emits stores a closed key untagged.
+        targetOp = createUsableVectorFilterOp(spec, createRecordVectorFieldAccessor(), getVectorDimension(), recordDesc,
+                primaryPartitionConstraint);
+        spec.connect(new OneToOneConnectorDescriptor(spec), sourceOp, 0, targetOp, 0);
+        sourceOp = targetOp;
+
         targetOp = createAssignOp(spec, numSecondaryKeys, recordDesc);
         spec.connect(new OneToOneConnectorDescriptor(spec), sourceOp, 0, targetOp, 0);
 
@@ -327,6 +345,13 @@ public class SecondaryVectorOperationsHelper extends SecondaryTreeIndexOperation
 
         sourceOp = targetOp;
         // primary index -> cast assign op (produces the secondary index entry)
+        // Filter before the assign: the record still carries type tags here, while the
+        // secondary tuple the assign emits stores a closed key untagged.
+        targetOp = createUsableVectorFilterOp(spec, createRecordVectorFieldAccessor(), getVectorDimension(), recordDesc,
+                primaryPartitionConstraint);
+        spec.connect(new OneToOneConnectorDescriptor(spec), sourceOp, 0, targetOp, 0);
+        sourceOp = targetOp;
+
         targetOp = createAssignOp(spec, numSecondaryKeys, recordDesc);
         spec.connect(new OneToOneConnectorDescriptor(spec), sourceOp, 0, targetOp, 0);
 
@@ -578,6 +603,12 @@ public class SecondaryVectorOperationsHelper extends SecondaryTreeIndexOperation
         // --- Step 2: Extract Vector Features ---
         // Vector Accessor
         IScalarEvaluatorFactory vectorFieldEvalFactory = createFieldAccessor(itemType, recordColumn, vectorFieldName);
+
+        // Only usable vectors reach the quantization stages.
+        targetOp = createUsableVectorFilterOp(spec, vectorFieldEvalFactory, vectorDimensions,
+                dataset.getPrimaryRecordDescriptor(metadataProvider), samplePartitionConstraint);
+        spec.connect(new OneToOneConnectorDescriptor(spec), sourceOp, 0, targetOp, 0);
+        sourceOp = targetOp;
 
         // Flattened Descriptor
         IDataFormat format = metadataProvider.getDataFormat();
@@ -940,5 +971,62 @@ public class SecondaryVectorOperationsHelper extends SecondaryTreeIndexOperation
             pkFields[i] = fieldPermutation[numSecondaryKeys + i];
         }
         return pkFields;
+    }
+
+    /**
+     * A filter admitting only records whose embedding is a usable vector, placed ahead of every stage that
+     * reads one. The predicate is the {@code isvector} builtin evaluated exactly as a user's
+     * {@code WHERE isvector(field, dimension)} would be, so an index holds exactly the rows for which that
+     * is true and a user can account for the rest with {@code isvector} themselves.
+     * <p>
+     * Every stage downstream may assume its input is a list of the declared dimension holding numeric
+     * elements. None of them re-check it.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
+    private IOperatorDescriptor createUsableVectorFilterOp(JobSpecification spec,
+            IScalarEvaluatorFactory vectorFieldAccessor, int dimension, RecordDescriptor inputRecordDescriptor,
+            AlgebricksPartitionConstraint partitionConstraint) throws AlgebricksException {
+        IScalarEvaluatorFactory condition = new IsVectorDescriptor().createEvaluatorFactory(
+                new IScalarEvaluatorFactory[] { vectorFieldAccessor, constantInt32(dimension) });
+        // A null projection list passes every field through; the filter only decides which tuples survive.
+        StreamSelectRuntimeFactory selectRuntime =
+                new StreamSelectRuntimeFactory(condition, null, BinaryBooleanInspector.FACTORY, false, -1, null);
+        selectRuntime.setSourceLocation(sourceLoc);
+        AlgebricksMetaOperatorDescriptor filterOp = new AlgebricksMetaOperatorDescriptor(spec, 1, 1,
+                new IPushRuntimeFactory[] { selectRuntime }, new RecordDescriptor[] { inputRecordDescriptor });
+        filterOp.setSourceLocation(sourceLoc);
+        AlgebricksPartitionConstraintHelper.setPartitionConstraintInJobSpec(spec, filterOp, partitionConstraint);
+        return filterOp;
+    }
+
+    /** The declared dimension as a constant argument to {@code isvector}. */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
+    private static IScalarEvaluatorFactory constantInt32(int value) throws AlgebricksException {
+        ArrayBackedValueStorage storage = new ArrayBackedValueStorage();
+        try {
+            SerializerDeserializerProvider.INSTANCE.getSerializerDeserializer(BuiltinType.AINT32)
+                    .serialize(new AInt32(value), storage.getDataOutput());
+        } catch (HyracksDataException e) {
+            throw new AlgebricksException(e);
+        }
+        return new ConstantEvalFactory(Arrays.copyOfRange(storage.getByteArray(), storage.getStartOffset(),
+                storage.getStartOffset() + storage.getLength()));
+    }
+
+    /**
+     * The vector field read out of the record. Every value there still carries its type tag, while the
+     * secondary tuple the assign produces stores a closed key with its declared serde and so is
+     * <em>untagged</em>. A filter placed after the assign would see a headerless list and reject everything,
+     * so filtering happens on the scan side of the assign in every job.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
+    private int getVectorDimension() {
+        return ((Index.VectorIndexDetails) index.getIndexDetails()).getVectorParameters().getDimension();
+    }
+
+    private IScalarEvaluatorFactory createRecordVectorFieldAccessor() throws AlgebricksException {
+        Index.VectorIndexDetails details = (Index.VectorIndexDetails) index.getIndexDetails();
+        int recordColumn = dataset.getDatasetType() == DatasetType.INTERNAL ? numPrimaryKeys : 0;
+        return createFieldAccessor(itemType, recordColumn, details.getKeyFieldNames().get(0));
     }
 }

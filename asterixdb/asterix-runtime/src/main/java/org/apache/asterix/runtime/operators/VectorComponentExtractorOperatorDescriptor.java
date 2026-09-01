@@ -23,19 +23,11 @@ import java.nio.ByteBuffer;
 
 import org.apache.asterix.common.exceptions.ErrorCode;
 import org.apache.asterix.common.exceptions.RuntimeDataException;
-import org.apache.asterix.dataflow.data.nontagged.serde.ADoubleSerializerDeserializer;
-import org.apache.asterix.dataflow.data.nontagged.serde.AFloatSerializerDeserializer;
-import org.apache.asterix.dataflow.data.nontagged.serde.AInt16SerializerDeserializer;
-import org.apache.asterix.dataflow.data.nontagged.serde.AInt32SerializerDeserializer;
-import org.apache.asterix.dataflow.data.nontagged.serde.AInt64SerializerDeserializer;
-import org.apache.asterix.dataflow.data.nontagged.serde.AInt8SerializerDeserializer;
 import org.apache.asterix.formats.nontagged.SerializerDeserializerProvider;
 import org.apache.asterix.om.base.ADouble;
 import org.apache.asterix.om.base.AMutableDouble;
 import org.apache.asterix.om.types.ATypeTag;
 import org.apache.asterix.om.types.BuiltinType;
-import org.apache.asterix.om.types.EnumDeserializer;
-import org.apache.asterix.om.types.hierachy.ATypeHierarchy;
 import org.apache.asterix.runtime.evaluators.common.ListAccessor;
 import org.apache.hyracks.algebricks.runtime.base.IScalarEvaluator;
 import org.apache.hyracks.algebricks.runtime.base.IScalarEvaluatorFactory;
@@ -100,9 +92,8 @@ public class VectorComponentExtractorOperatorDescriptor extends AbstractSingleAc
         private IScalarEvaluator vectorFieldEval;
         private final IPointable vectorFieldValue = new VoidPointable();
         private final ListAccessor listAccessor = new ListAccessor();
-        private boolean sawIndexableVector;
-        private long skippedVectorCount;
-        private int skippedDimension = -1;
+        /** The one decoder shared with the k-means and bulk-load stages rather than copied. */
+        private final KMeansUtils kMeansUtils = new KMeansUtils(new VoidPointable(), new ArrayBackedValueStorage());
         private final IPointable tempVal = new VoidPointable();
         private final ArrayBackedValueStorage storage = new ArrayBackedValueStorage();
         @SuppressWarnings("unchecked")
@@ -144,31 +135,11 @@ public class VectorComponentExtractorOperatorDescriptor extends AbstractSingleAc
                     continue;
                 }
 
-                ATypeTag typeTag = EnumDeserializer.ATYPETAGDESERIALIZER.deserialize(data[offset]);
-                if (typeTag == ATypeTag.MISSING || typeTag == ATypeTag.NULL || typeTag == ATypeTag.SYSTEM_NULL) {
-                    continue;
-                }
-
-                // Check if it's a list type (required for vector)
-                if (!typeTag.isListType()) {
-                    continue;
-                }
-
-                // Iterate through array elements and emit one tuple per component
+                // Input is pre-filtered by isvector(field, dimension), so every value here is already a list
+                // of the declared dimension with numeric elements. See SecondaryVectorOperationsHelper.
                 listAccessor.reset(data, offset);
                 ATypeTag itemTypeTag = listAccessor.getItemType();
                 int listSize = listAccessor.size();
-
-                // The bulk load and k-means both skip a vector of another dimension, so its components must
-                // not shape the quantization constants either.
-                if (listSize != vectorDimension) {
-                    skippedVectorCount++;
-                    if (skippedDimension < 0) {
-                        skippedDimension = listSize;
-                    }
-                    continue;
-                }
-                sawIndexableVector = true;
 
                 for (int j = 0; j < listSize; j++) {
                     try {
@@ -176,7 +147,7 @@ public class VectorComponentExtractorOperatorDescriptor extends AbstractSingleAc
                         listAccessor.getOrWriteItem(j, tempVal, storage);
 
                         // Extract numeric value (coerce to double)
-                        double componentValue = extractNumericValue(tempVal, itemTypeTag);
+                        double componentValue = kMeansUtils.extractNumericVector(tempVal, itemTypeTag);
                         if (Double.isNaN(componentValue)) {
                             continue; // Skip invalid values
                         }
@@ -215,60 +186,10 @@ public class VectorComponentExtractorOperatorDescriptor extends AbstractSingleAc
          * Extracts numeric value from pointable, following KMeansUtils pattern.
          * Coerces all numeric types to double.
          */
-        private double extractNumericValue(IPointable pointable, ATypeTag derivedTypeTag) throws HyracksDataException {
-            byte[] data = pointable.getByteArray();
-            int offset = pointable.getStartOffset();
-
-            if (ATypeHierarchy.getTypeDomain(derivedTypeTag) == ATypeHierarchy.Domain.NUMERIC) {
-                double value = getValueFromTag(derivedTypeTag, data, offset);
-                return value;
-            } else if (derivedTypeTag == ATypeTag.ANY) {
-                ATypeTag typeTag = EnumDeserializer.ATYPETAGDESERIALIZER.deserialize(data[offset]);
-                double value = getValueFromTag(typeTag, data, offset);
-                return value;
-            } else {
-                return Double.NaN; // Invalid type
-            }
-        }
-
-        /**
-         * Gets numeric value from type tag, following KMeansUtils.getValueFromTag pattern.
-         */
-        private double getValueFromTag(ATypeTag typeTag, byte[] data, int offset) throws HyracksDataException {
-            switch (typeTag) {
-                case TINYINT:
-                    return AInt8SerializerDeserializer.getByte(data, offset + 1);
-                case SMALLINT:
-                    return AInt16SerializerDeserializer.getShort(data, offset + 1);
-                case INTEGER:
-                    return AInt32SerializerDeserializer.getInt(data, offset + 1);
-                case BIGINT:
-                    return AInt64SerializerDeserializer.getLong(data, offset + 1);
-                case FLOAT:
-                    return AFloatSerializerDeserializer.getFloat(data, offset + 1);
-                case DOUBLE:
-                    return ADoubleSerializerDeserializer.getDouble(data, offset + 1);
-                default:
-                    return Double.NaN;
-            }
-        }
 
         @Override
         public void fail() throws HyracksDataException {
             writer.fail();
-        }
-
-        /**
-         * Rejects a partition that sampled vectors but can index none of them: it would contribute nothing to
-         * the index. Raised in this first build job, ahead of any training work.
-         */
-        private void rejectIfNothingIndexable() throws HyracksDataException {
-            if (!sawIndexableVector && skippedVectorCount > 0) {
-                throw new RuntimeDataException(ErrorCode.COMPILATION_VECTOR_INDEX_CREATION_FAILED,
-                        "the index declares dimension " + vectorDimension + ", but none of the " + skippedVectorCount
-                                + " vector(s) sampled in one partition match it (found " + "dimension "
-                                + skippedDimension + "). Set the index \"dimension\" parameter to match the data.");
-            }
         }
 
         @Override
@@ -277,7 +198,6 @@ public class VectorComponentExtractorOperatorDescriptor extends AbstractSingleAc
             // close() is the one call allowed from there.
             HyracksDataException failure = null;
             try {
-                rejectIfNothingIndexable();
                 FrameUtils.flushFrame(appender.getBuffer(), writer);
             } catch (HyracksDataException e) {
                 failure = e;

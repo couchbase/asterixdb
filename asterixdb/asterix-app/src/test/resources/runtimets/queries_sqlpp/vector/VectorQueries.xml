@@ -87,6 +87,11 @@
         </compilation-unit>
     </test-case>
     <test-case FilePath="vector">
+        <compilation-unit name="vector-distance-empty-vector">
+            <output-dir compare="Text">vector-distance-empty-vector</output-dir>
+        </compilation-unit>
+    </test-case>
+    <test-case FilePath="vector">
         <compilation-unit name="create-index-vtree-type-mismatch">
             <output-dir compare="Text">create-index-vtree-type-mismatch</output-dir>
             <expected-error>VECTOR field annotation is not supported for TYPE BTREE</expected-error>
@@ -106,7 +111,11 @@
              be an alternation. -->
         <compilation-unit name="create-index-vtree-dimension-mismatch">
             <output-dir compare="Text">create-index-vtree-dimension-mismatch</output-dir>
-            <expected-error>the index declares</expected-error>
+            <!-- Every record is the wrong dimension, so the usable-vector filter drops them all and the
+                 build reports the generic "nothing usable" error. It no longer names the observed
+                 dimension: the filter is a boolean predicate and does not carry that back. The message
+                 points at isvector instead, which reports it more completely than the old text did. -->
+            <expected-error>The sampled records yielded no usable vector for the indexed field</expected-error>
             <!-- Raised by a build job on an NC, so it carries no source location. -->
             <source-location>false</source-location>
         </compilation-unit>

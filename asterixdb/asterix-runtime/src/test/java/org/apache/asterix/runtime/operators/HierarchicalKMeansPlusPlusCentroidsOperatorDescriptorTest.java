@@ -141,25 +141,15 @@ public class HierarchicalKMeansPlusPlusCentroidsOperatorDescriptorTest {
     // ------------------------------------------------------------------ tests
 
     /**
-     * Off-dimension vectors are never indexed, so they must not shape the centroids either. Before the
-     * guard, a longer one met a shorter centroid in the distance loop and threw
-     * {@link ArrayIndexOutOfBoundsException}.
+     * Every vector reaching k-means carries the declared dimension because isvector(field, dimension) has
+     * already filtered the stream. The centroids it produces carry that dimension too.
      */
-    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
     @Test
-    public void testOffDimensionVectorsDoNotShapeCentroids() throws Exception {
-        List<double[]> baseline = twoClusterVectors(20);
-        List<CentroidTuple> expected = parseAll(runOperator(42L, 2, 32768, baseline));
-
-        List<double[]> polluted = new ArrayList<>(baseline);
-        for (int i = 0; i < 10; i++) {
-            polluted.add(new double[DIM + 1]);
-            polluted.add(new double[DIM - 1]);
-        }
-        List<CentroidTuple> actual = parseAll(runOperator(42L, 2, 32768, polluted));
-
-        Assert.assertEquals("Off-dimension vectors must not change the centroid count", expected.size(), actual.size());
-        for (CentroidTuple t : actual) {
+    public void testCentroidsCarryTheDeclaredDimension() throws Exception {
+        List<CentroidTuple> centroids = parseAll(runOperator(42L, 2, 32768, twoClusterVectors(20)));
+        Assert.assertFalse("expected centroids from a two-cluster sample", centroids.isEmpty());
+        for (CentroidTuple t : centroids) {
             Assert.assertEquals("Centroids must carry the declared dimension", DIM, t.embedding.length);
         }
     }
