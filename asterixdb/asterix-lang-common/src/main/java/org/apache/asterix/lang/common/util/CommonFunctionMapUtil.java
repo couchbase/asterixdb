@@ -106,6 +106,7 @@ public class CommonFunctionMapUtil {
         addFunctionMapping("isstr", "is-string"); // isstr, internal: is-string
         addFunctionMapping("is_str", "is-string"); // is_str, internal: is-string
         addFunctionMapping("isarray", "is-array"); // isarray, internal: is-array
+        addFunctionMapping("isvector", "is-vector"); // isvector, internal: is-vector
         addFunctionMapping("ismultiset", "is-multiset"); // ismultiset, internal: is-multiset
         addFunctionMapping("isobject", "is-object"); // isobject, internal: is-object
         addFunctionMapping("isobj", "is-object"); // isobj, internal: is-object

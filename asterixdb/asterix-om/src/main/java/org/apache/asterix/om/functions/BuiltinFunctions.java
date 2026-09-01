@@ -1327,6 +1327,8 @@ public class BuiltinFunctions {
     public static final FunctionIdentifier IS_NUMBER = FunctionConstants.newAsterix("is-number", 1);
     public static final FunctionIdentifier IS_STRING = FunctionConstants.newAsterix("is-string", 1);
     public static final FunctionIdentifier IS_ARRAY = FunctionConstants.newAsterix("is-array", 1);
+    public static final FunctionIdentifier IS_VECTOR = FunctionConstants.newAsterix("is-vector", 1);
+    public static final FunctionIdentifier IS_VECTOR_WITH_DIMENSION = FunctionConstants.newAsterix("is-vector", 2);
     public static final FunctionIdentifier IS_OBJECT = FunctionConstants.newAsterix("is-object", 1);
     public static final FunctionIdentifier IS_MULTISET = FunctionConstants.newAsterix("is-multiset", 1);
     public static final FunctionIdentifier GET_TYPE = FunctionConstants.newAsterix("get-type", 1);
@@ -1427,6 +1429,8 @@ public class BuiltinFunctions {
         addFunction(IS_NUMBER, ABooleanTypeComputer.INSTANCE, true);
         addFunction(IS_STRING, ABooleanTypeComputer.INSTANCE, true);
         addFunction(IS_ARRAY, ABooleanTypeComputer.INSTANCE, true);
+        addFunction(IS_VECTOR, ABooleanTypeComputer.INSTANCE, true);
+        addFunction(IS_VECTOR_WITH_DIMENSION, ABooleanTypeComputer.INSTANCE, true);
         addFunction(IS_OBJECT, ABooleanTypeComputer.INSTANCE, true);
         addFunction(IS_MULTISET, ABooleanTypeComputer.INSTANCE, true);
         addFunction(NOT, ABooleanTypeComputer.INSTANCE, true);

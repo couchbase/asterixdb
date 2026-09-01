@@ -1,0 +1,37 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+// isvector(v) and isvector(v, dimension). Null and missing propagate as for the rest of the
+// is_* family, so "k" is null and "l" is absent rather than both being false.
+{
+  "a_ok":          isvector([0.2, 0.1, 0.4, 0.3]),
+  "b_ok_dim":      isvector([0.2, 0.1, 0.4, 0.3], 4),
+  "c_mixed":       isvector([0.2, 0.1, "s", 0.3], 4),
+  "d_all_string":  isvector(["a", "b", "c", "d"], 4),
+  "e_null_elem":   isvector([0.2, 0.1, null, 0.3], 4),
+  "f_nested":      isvector([0.2, 0.1, [1], 0.3], 4),
+  "g_short":       isvector([0.2, 0.1, 0.3], 4),
+  "h_empty_dim":   isvector([], 4),
+  "i_empty_nodim": isvector([]),
+  "j_not_list":    isvector("x"),
+  "k_null":        isvector(null),
+  "l_missing":     isvector(missing),
+  "m_integers":    isvector([1, 2, 3], 3),
+  "n_underscore":  is_vector([1, 2, 3], 3)
+};

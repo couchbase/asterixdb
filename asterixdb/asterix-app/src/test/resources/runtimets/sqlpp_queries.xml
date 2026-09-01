@@ -14980,6 +14980,11 @@
       </compilation-unit>
     </test-case>
     <test-case FilePath="types">
+      <compilation-unit name="isvector">
+        <output-dir compare="Text">isvector</output-dir>
+      </compilation-unit>
+    </test-case>
+    <test-case FilePath="types">
       <compilation-unit name="isatomic">
         <output-dir compare="Text">isatomic</output-dir>
       </compilation-unit>

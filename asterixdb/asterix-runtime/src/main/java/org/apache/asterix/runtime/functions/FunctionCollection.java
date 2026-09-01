@@ -433,6 +433,7 @@ import org.apache.asterix.runtime.evaluators.functions.IsTemporalDescriptor;
 import org.apache.asterix.runtime.evaluators.functions.IsTimeDescriptor;
 import org.apache.asterix.runtime.evaluators.functions.IsUUIDDescriptor;
 import org.apache.asterix.runtime.evaluators.functions.IsUnknownDescriptor;
+import org.apache.asterix.runtime.evaluators.functions.IsVectorDescriptor;
 import org.apache.asterix.runtime.evaluators.functions.LenDescriptor;
 import org.apache.asterix.runtime.evaluators.functions.NotDescriptor;
 import org.apache.asterix.runtime.evaluators.functions.NumericACosDescriptor;
@@ -1366,6 +1367,8 @@ public final class FunctionCollection implements IFunctionCollection {
         // Type functions.
         fc.add(GetTypeDescriptor.FACTORY);
         fc.add(IsArrayDescriptor.FACTORY);
+        fc.add(IsVectorDescriptor.FACTORY);
+        fc.add(IsVectorDescriptor.IsVectorWithDimensionDescriptor.FACTORY);
         fc.add(IsAtomicDescriptor.FACTORY);
         fc.add(IsBooleanDescriptor.FACTORY);
         fc.add(IsNumberDescriptor.FACTORY);
