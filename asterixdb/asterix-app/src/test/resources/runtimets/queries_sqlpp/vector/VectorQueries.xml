@@ -80,6 +80,28 @@
         </compilation-unit>
     </test-case>
     <test-case FilePath="vector">
+        <compilation-unit name="create-index-vtree-clusters-not-recommended">
+            <output-dir compare="Text">create-index-vtree-clusters-not-recommended</output-dir>
+        </compilation-unit>
+    </test-case>
+    <test-case FilePath="vector">
+        <compilation-unit name="create-index-vtree-clusters-exceed-rows">
+            <output-dir compare="Text">create-index-vtree-clusters-exceed-rows</output-dir>
+            <expected-error>records per storage partition available to train on</expected-error>
+        </compilation-unit>
+    </test-case>
+    <test-case FilePath="vector">
+        <compilation-unit name="create-index-vtree-train-list-too-small">
+            <output-dir compare="Text">create-index-vtree-train-list-too-small</output-dir>
+            <expected-error>fewer than the 2 clusters to be built</expected-error>
+        </compilation-unit>
+    </test-case>
+    <test-case FilePath="vector">
+        <compilation-unit name="create-index-vtree-derived-sizing">
+            <output-dir compare="Text">create-index-vtree-derived-sizing</output-dir>
+        </compilation-unit>
+    </test-case>
+    <test-case FilePath="vector">
         <compilation-unit name="create-index-vtree-null-embedding">
             <output-dir compare="Text">create-index-vtree-null-embedding</output-dir>
             <expected-error>Failed to build the vector index. The sampled records yielded no usable vector</expected-error>

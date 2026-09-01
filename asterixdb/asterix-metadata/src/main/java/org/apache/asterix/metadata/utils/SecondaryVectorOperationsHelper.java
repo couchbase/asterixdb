@@ -122,10 +122,6 @@ public class SecondaryVectorOperationsHelper extends SecondaryTreeIndexOperation
 
     private RecordDescriptor recordDesc;
     private static final float DEFAULT_CONFIDENCE_INTERVAL = 0.99f;
-    /** Minimum train-list sample size for static-structure build; below this after clamp → full scan. */
-    private static final int TRAIN_LIST_MIN_SAMPLE_SIZE = 10000;
-    /** Maximum train-list sample size cap for static-structure build. */
-    private static final int TRAIN_LIST_MAX_SAMPLE_SIZE = 1000000;
     private IVTreeBinaryAccessorFactory vectorAccessorFactory;
 
     protected SecondaryVectorOperationsHelper(Dataset dataset, Index index, MetadataProvider metadataProvider,
@@ -148,22 +144,6 @@ public class SecondaryVectorOperationsHelper extends SecondaryTreeIndexOperation
      */
     public IVTreeBinaryAccessorFactory getVectorAccessorFactory() {
         return vectorAccessorFactory;
-    }
-
-    private static int clampTrainListSampleSize(int sampleSize, long datasetCardinality) {
-        if (datasetCardinality > 0) {
-            sampleSize = (int) Math.min(sampleSize, datasetCardinality);
-        }
-        sampleSize = Math.max(sampleSize, TRAIN_LIST_MIN_SAMPLE_SIZE);
-        sampleSize = Math.min(sampleSize, TRAIN_LIST_MAX_SAMPLE_SIZE);
-        if (datasetCardinality > 0) {
-            sampleSize = (int) Math.min(sampleSize, datasetCardinality);
-        }
-        return sampleSize;
-    }
-
-    private static boolean useFullScanForTrainList(int sampleSize) {
-        return sampleSize < TRAIN_LIST_MIN_SAMPLE_SIZE;
     }
 
     @Override
@@ -210,30 +190,29 @@ public class SecondaryVectorOperationsHelper extends SecondaryTreeIndexOperation
         Index.SampleIndexDetails sampleDetails = (Index.SampleIndexDetails) sampleIndex.getIndexDetails();
         long datasetCardinality = sampleDetails.getSourceCardinality();
 
-        int sampleSize = 0;
         if (datasetCardinality <= 0) {
             throw new CompilationException(ErrorCode.COMPILATION_ERROR, sourceLoc,
-                    "train_list_fraction requires ANALYZE DATASET to be run first to obtain dataset cardinality.");
+                    "Vector index requires a non-empty collection; load the data and run ANALYZE DATASET first.");
         }
-        sampleSize = (int) Math.max(1, datasetCardinality * trainListFraction);
-
-        // Clamp sample size before deciding between full scan vs sampling.
-        // Minimum TRAIN_LIST_MIN_SAMPLE_SIZE; maximum TRAIN_LIST_MAX_SAMPLE_SIZE.
-        // Full scan if dataset cardinality is below TRAIN_LIST_MIN_SAMPLE_SIZE after clamp.
-        sampleSize = clampTrainListSampleSize(sampleSize, datasetCardinality);
-        boolean useFullScan = useFullScanForTrainList(sampleSize);
 
         PartitioningProperties partitioningProperties = metadataProvider.getPartitioningProperties(dataset);
         int numPartitions = partitioningProperties.getNumberOfPartitions();
+
+        // The sizing was fixed on the DDL path and persisted, so this reads it back rather than deriving it
+        // again: a rebuild reproduces the original build even if the collection has grown since. Everything
+        // here is per storage partition, which is the unit the rules are expressed in and the unit the sample
+        // scan wants. There is no global figure to divide down.
+        long perPartitionCardinality = VTreeParamsInference.perPartitionCardinality(datasetCardinality, numPartitions);
+        long trainListSize = Math.max(1L, Math.round(trainListFraction * perPartitionCardinality));
+        boolean useFullScan = VTreeParamsInference.useFullScan(trainListSize, perPartitionCardinality);
 
         IOperatorDescriptor sourceOp = DatasetUtil.createDummyKeyProviderOp(spec, dataset, metadataProvider);
         IOperatorDescriptor targetOp;
         if (useFullScan) {
             targetOp = DatasetUtil.createPrimaryIndexScanOp(spec, metadataProvider, dataset, projectorFactory);
         } else {
-            int sampleCardinalityPerPartition = Math.max(1, sampleSize / numPartitions);
-            targetOp = DatasetUtil.createSampleScanOp(spec, metadataProvider, dataset, sampleCardinalityPerPartition,
-                    seed, projectorFactory);
+            targetOp = DatasetUtil.createSampleScanOp(spec, metadataProvider, dataset,
+                    (int) Math.min(trainListSize, Integer.MAX_VALUE), seed, projectorFactory);
         }
         spec.connect(new OneToOneConnectorDescriptor(spec), sourceOp, 0, targetOp, 0);
 
@@ -261,8 +240,10 @@ public class SecondaryVectorOperationsHelper extends SecondaryTreeIndexOperation
         // k-means cannot be run with K = 0. An explicit num_clusters is already validated as >= 1 by
         // VectorIndexDeclUtil.validateNumClusters, so the clamp only affects the computed default.
         VectorIndexParameters vectorParameters = indexDetails.getVectorParameters();
-        int defaultNumClusters = Math.max(1, (int) Math.sqrt((double) datasetCardinality / numPartitions));
-        int K = vectorParameters.getNumClusters().orElse(defaultNumClusters);
+        // Present for every index created since the sizing moved to the DDL path. The fallback covers an
+        // index created before that, whose record never carried the cluster count.
+        int K = vectorParameters.getNumClusters()
+                .orElseGet(() -> VTreeParamsInference.defaultNumClusters(perPartitionCardinality));
 
         // Distance metric from index DDL (WITH similarity "euclidean"|"cosine"|etc.).
         // For cosine, embeddings must be L2-normalized to unit length before insert; the engine does not normalize.

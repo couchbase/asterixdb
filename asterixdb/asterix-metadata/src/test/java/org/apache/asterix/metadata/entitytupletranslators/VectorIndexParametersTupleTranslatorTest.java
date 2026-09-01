@@ -31,6 +31,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 
 import org.apache.asterix.common.config.DatasetConfig.DatasetType;
@@ -71,7 +72,7 @@ import org.junit.Test;
  * without extending {@code NAMES} fails it, and the failure message names the methods to update. Give the new
  * parameter a non-default value in {@link #everyParameterRoundTrips} and the round trip is covered too.
  */
-@AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.TEST_GENERATED)
+@AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
 public class VectorIndexParametersTupleTranslatorTest {
 
     /** Every parameter set to a non-default value, so a dropped field cannot look like a correct round trip. */
@@ -112,7 +113,17 @@ public class VectorIndexParametersTupleTranslatorTest {
 
         VectorIndexParameters readBack = roundTrip(minimal);
 
-        Assert.assertEquals(minimal, readBack);
+        // Not equal to the input: train_list_fraction was left unset, and unset is a DDL-time state meaning
+        // "derive this from the cardinality". Nothing persists it in that state, so a record that does not
+        // carry it reads back at the historical default instead, which is what keeps an index created before
+        // the parameter existed behaving as it did.
+        Assert.assertEquals(OptionalDouble.empty(), minimal.getTrainListFractionOpt());
+        Assert.assertEquals(OptionalDouble.of(VectorIndexParameters.DEFAULT_TRAIN_LIST_FRACTION),
+                readBack.getTrainListFractionOpt());
+        Assert.assertEquals(
+                minimal.withInferredSizes(readBack.getNumClusters().orElse(1),
+                        VectorIndexParameters.DEFAULT_TRAIN_LIST_FRACTION).getTrainListFraction(),
+                readBack.getTrainListFraction(), 0.0);
         Assert.assertEquals(OptionalInt.empty(), readBack.getNumClusters());
         // 0 is a seed like any other, not an "unset" marker: it must survive the round trip rather than being
         // treated as absent and redrawn.

@@ -32,6 +32,7 @@ import static org.apache.asterix.om.vector.VectorIndexParameters.TRAIN_LIST_FRAC
 
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
@@ -104,7 +105,7 @@ public class VectorIndexDeclUtil {
         builder.setDimension(validateDimension(node));
         builder.setSimilarity(validateSimilarity(node));
         builder.setQuantization(validateQuantization(node));
-        builder.setTrainListFraction(validateTrainList(node));
+        validateTrainList(node).ifPresent(builder::setTrainListFraction);
         builder.setEpsilon(validateEpsilon(node));
         validateNumClusters(node).ifPresent(builder::setNumClusters);
         builder.setCrossPollinationM(validateCrossPollinationM(node));
@@ -189,10 +190,12 @@ public class VectorIndexDeclUtil {
     /**
      * Training list size is specified only via {@code train_list_fraction} (with ANALYZE/cardinality at build time).
      */
-    private static double validateTrainList(AdmObjectNode node) throws CompilationException {
+    private static OptionalDouble validateTrainList(AdmObjectNode node) throws CompilationException {
         IAdmNode fn = node.get(TRAIN_LIST_FRACTION);
         if (fn == null) {
-            return VectorIndexParameters.DEFAULT_TRAIN_LIST_FRACTION;
+            // Left unset rather than defaulted: the size is derived from the cluster count when the user
+            // says nothing, and a defaulted value here would be indistinguishable from one they typed.
+            return OptionalDouble.empty();
         }
         double value = parseDoubleOrBigInt(fn,
                 "Invalid `train_list_fraction` parameter value. It must be in the range of (0,1]");
@@ -200,7 +203,7 @@ public class VectorIndexDeclUtil {
             throw new CompilationException(ErrorCode.COMPILATION_VECTOR_INDEX_CREATION_FAILED,
                     "Invalid `train_list_fraction` parameter value. It must be in the range of (0,1]");
         }
-        return value;
+        return OptionalDouble.of(value);
     }
 
     private static double validateEpsilon(AdmObjectNode node) throws CompilationException {

@@ -238,6 +238,7 @@ import org.apache.asterix.metadata.utils.IndexUtil;
 import org.apache.asterix.metadata.utils.KeyFieldTypeUtil;
 import org.apache.asterix.metadata.utils.SampleOperationsHelper;
 import org.apache.asterix.metadata.utils.TypeUtil;
+import org.apache.asterix.metadata.utils.VTreeParamsInference;
 import org.apache.asterix.om.base.ANull;
 import org.apache.asterix.om.base.IAObject;
 import org.apache.asterix.om.types.AOrderedListType;
@@ -250,6 +251,7 @@ import org.apache.asterix.om.types.IAType;
 import org.apache.asterix.om.types.TypeSignature;
 import org.apache.asterix.om.types.hierachy.ATypeHierarchy;
 import org.apache.asterix.om.utils.RecordUtil;
+import org.apache.asterix.om.vector.VectorIndexParameters;
 import org.apache.asterix.optimizer.rules.visitor.FunctionCardinalityInferenceVisitor;
 import org.apache.asterix.runtime.fulltext.AbstractFullTextFilterDescriptor;
 import org.apache.asterix.runtime.fulltext.FullTextConfigDescriptor;
@@ -1908,9 +1910,15 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
 
                 // excludeUnknownKey is a BTree/Array-index DDL option that does not apply to a vector index;
                 // the vector CREATE INDEX path never sets it, so it is always empty here.
-                indexDetails = new Index.VectorIndexDetails(keyFieldNames, includeFieldNames,
-                        includeFieldSourceIndicators, includeFieldTypes, false, OptionalBoolean.empty(),
-                        stmtCreateIndex.getVectorParameters());
+                // Fix the sizing before the record is written. num_clusters and train_list_fraction are
+                // derived from the per-partition cardinality when the user leaves them out, and the record is
+                // written before any build job runs, so deriving them later would leave the catalog silent
+                // about what the build actually used. Same reason the seed is drawn at DDL time.
+                VectorIndexParameters vectorParameters = VTreeParamsInference.infer(metadataProvider, ds,
+                        stmtCreateIndex.getVectorParameters(), warningCollector, sourceLoc);
+                indexDetails =
+                        new Index.VectorIndexDetails(keyFieldNames, includeFieldNames, includeFieldSourceIndicators,
+                                includeFieldTypes, false, OptionalBoolean.empty(), vectorParameters);
 
                 Index newIndex = new Index(databaseName, dataverseName, datasetName, indexName, indexType, indexDetails,
                         stmtCreateIndex.isEnforced(), false, MetadataUtil.PENDING_ADD_OP, creator);

@@ -21,6 +21,7 @@ package org.apache.asterix.om.vector;
 import java.io.Serializable;
 import java.util.List;
 import java.util.Objects;
+import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -69,7 +70,7 @@ import org.apache.logging.log4j.Logger;
  * reloaded — the defect this class was extracted to prevent. {@code VectorIndexParametersTupleTranslatorTest}
  * guards the count: add a field without extending {@code NAMES} and it fails.
  */
-@AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.GENERATED)
+@AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
 public final class VectorIndexParameters implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -87,6 +88,11 @@ public final class VectorIndexParameters implements Serializable {
     public static final String SEED = "seed";
 
     public static final VectorQuantization DEFAULT_QUANTIZATION = VectorQuantization.SQ8;
+    /**
+     * The fraction an index record reads back as when it does not carry one. Not a default anyone applies
+     * any more: an index created since the sizing moved to the DDL path always records the fraction its
+     * build used, so this only stands in for a record written before that.
+     */
     public static final double DEFAULT_TRAIN_LIST_FRACTION = 0.1;
     public static final double DEFAULT_EPSILON = 0.25;
     public static final int DEFAULT_CROSS_POLLINATION_M = 1;
@@ -104,13 +110,48 @@ public final class VectorIndexParameters implements Serializable {
     private final int dimension;
     private final VectorSimilarityMetric similarity;
     private final VectorQuantization quantization;
-    private final double trainListFraction;
+    /**
+     * {@code null} when unset: the training-list size is then derived from the cluster count. Nullable for
+     * the same reason {@link #numClusters} is. A primitive cannot distinguish "the user asked for 0.1"
+     * from "the user said nothing", and those two now size the training list differently.
+     */
+    private final Double trainListFraction;
     private final double epsilon;
     /** {@code null} when unset: the builder then derives it from the dataset cardinality at build time. */
     private final Integer numClusters;
     private final int crossPollinationM;
     private final double rngFactor;
     private final long seed;
+
+    /**
+     * Returns a copy with {@code num_clusters} and {@code train_list_fraction} fixed to the values the build
+     * will actually use.
+     * <p>
+     * Both are derived from the per-partition cardinality when the user does not supply them, so without this
+     * the record states the fraction the user asked for and says nothing at all about the cluster count
+     * ({@code num_clusters} is written only when set). What a build used would then be unrecoverable, since
+     * re-deriving it needs the cardinality as it stood at creation. This mirrors how the seed is fixed at DDL
+     * time and persisted so the index records what its own build used.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
+    public VectorIndexParameters withInferredSizes(int effectiveNumClusters, double effectiveTrainListFraction) {
+        Builder b = builder();
+        b.setDimension(dimension);
+        b.setSimilarity(similarity);
+        b.setQuantization(quantization);
+        b.setTrainListFraction(effectiveTrainListFraction);
+        b.setEpsilon(epsilon);
+        b.setNumClusters(effectiveNumClusters);
+        b.setCrossPollinationM(crossPollinationM);
+        b.setRngFactor(rngFactor);
+        b.setSeed(seed);
+        try {
+            return b.build();
+        } catch (AsterixException e) {
+            // Unreachable: every mandatory parameter is copied from an instance that already built.
+            throw new IllegalStateException(e);
+        }
+    }
 
     private VectorIndexParameters(Builder builder) {
         this.dimension = builder.dimension;
@@ -165,8 +206,20 @@ public final class VectorIndexParameters implements Serializable {
         return true;
     }
 
+    /**
+     * The effective fraction. Valid only once sizing has been derived, which the DDL path does before the
+     * index record is written; {@link #getTrainListFractionOpt()} is the accessor for the state before that.
+     */
     public double getTrainListFraction() {
+        if (trainListFraction == null) {
+            throw new IllegalStateException(TRAIN_LIST_FRACTION + " has not been derived yet");
+        }
         return trainListFraction;
+    }
+
+    /** Empty when the user did not specify it; the DDL path then derives it from the cluster count. */
+    public OptionalDouble getTrainListFractionOpt() {
+        return trainListFraction == null ? OptionalDouble.empty() : OptionalDouble.of(trainListFraction);
     }
 
     public double getEpsilon() {
@@ -224,7 +277,9 @@ public final class VectorIndexParameters implements Serializable {
         writer.writeInt(DIMENSION, dimension);
         writer.writeString(SIMILARITY, similarity.canonical());
         writer.writeString(QUANTIZATION, quantization.label());
-        writer.writeDouble(TRAIN_LIST_FRACTION, trainListFraction);
+        if (trainListFraction != null) {
+            writer.writeDouble(TRAIN_LIST_FRACTION, trainListFraction);
+        }
         writer.writeDouble(EPSILON, epsilon);
         if (numClusters != null) {
             writer.writeInt(NUM_CLUSTERS, numClusters);
@@ -274,9 +329,10 @@ public final class VectorIndexParameters implements Serializable {
             builder.setQuantization(quantization);
         }
         Double trainListFraction = reader.readDouble(TRAIN_LIST_FRACTION);
-        if (trainListFraction != null) {
-            builder.setTrainListFraction(trainListFraction);
-        }
+        // Always concrete when read back. "Unset" is a DDL-time state meaning "derive this from the
+        // cardinality"; an index already in the catalog has been sized, so a record that predates the
+        // parameter falls back to the historical default rather than reading back as unset.
+        builder.setTrainListFraction(trainListFraction != null ? trainListFraction : DEFAULT_TRAIN_LIST_FRACTION);
         Double epsilon = reader.readDouble(EPSILON);
         if (epsilon != null) {
             builder.setEpsilon(epsilon);
@@ -310,7 +366,7 @@ public final class VectorIndexParameters implements Serializable {
         }
         return dimension == other.dimension && Objects.equals(similarity, other.similarity)
                 && Objects.equals(quantization, other.quantization)
-                && Double.compare(trainListFraction, other.trainListFraction) == 0
+                && Objects.equals(trainListFraction, other.trainListFraction)
                 && Double.compare(epsilon, other.epsilon) == 0 && Objects.equals(numClusters, other.numClusters)
                 && crossPollinationM == other.crossPollinationM && Double.compare(rngFactor, other.rngFactor) == 0
                 && seed == other.seed;
@@ -350,7 +406,7 @@ public final class VectorIndexParameters implements Serializable {
         private int dimension = -1;
         private VectorSimilarityMetric similarity;
         private VectorQuantization quantization = DEFAULT_QUANTIZATION;
-        private double trainListFraction = DEFAULT_TRAIN_LIST_FRACTION;
+        private Double trainListFraction;
         private double epsilon = DEFAULT_EPSILON;
         private Integer numClusters;
         private int crossPollinationM = DEFAULT_CROSS_POLLINATION_M;
