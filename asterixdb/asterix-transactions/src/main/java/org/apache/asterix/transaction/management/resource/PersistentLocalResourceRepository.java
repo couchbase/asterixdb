@@ -75,6 +75,7 @@ import org.apache.hyracks.storage.am.lsm.common.impls.LSMComponentId;
 import org.apache.hyracks.storage.common.ILocalResourceRepository;
 import org.apache.hyracks.storage.common.LocalResource;
 import org.apache.hyracks.util.ExitUtil;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -352,6 +353,24 @@ public class PersistentLocalResourceRepository implements ILocalResourceReposito
 
     public void invalidateResource(String relativePath) {
         resourceCache.invalidate(relativePath);
+    }
+
+    /**
+     * Invalidates any cached view of the resources of storage partition {@code partition}. Must be called when the
+     * node stops owning the partition.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.GENERATED)
+    public void invalidatePartitionResources(int partition) {
+        // write access excludes get(), which populates the cache from the resource's metadata file
+        beforeWriteAccess();
+        try {
+            resourceCache.asMap().entrySet().removeIf(entry -> {
+                DatasetLocalResource dsResource = (DatasetLocalResource) entry.getValue().getResource();
+                return dsResource.getPartition() == partition;
+            });
+        } finally {
+            afterWriteAccess();
+        }
     }
 
     public void clearResourcesCache() {

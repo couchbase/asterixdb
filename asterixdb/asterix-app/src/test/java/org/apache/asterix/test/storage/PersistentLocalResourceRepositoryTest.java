@@ -39,6 +39,7 @@ import org.apache.asterix.transaction.management.resource.PersistentLocalResourc
 import org.apache.hyracks.api.io.FileReference;
 import org.apache.hyracks.storage.am.lsm.common.impls.AbstractLSMIndexFileManager;
 import org.apache.hyracks.storage.common.LocalResource;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -222,6 +223,32 @@ public class PersistentLocalResourceRepositoryTest {
             Assert.assertTrue(btreePath.toFile().exists());
             Assert.assertTrue(filterPath.toFile().exists());
         }
+    }
+
+    @Test
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.TEST_GENERATED, notes = "Regression test for stale resource state of a released storage partition (MB-73587)")
+    public void invalidateReleasedPartitionResources() throws Exception {
+        final INcApplicationContext ncAppCtx = (INcApplicationContext) integrationUtil.ncs[0].getApplicationContext();
+        final String nodeId = ncAppCtx.getServiceContext().getNodeId();
+        final String datasetName = "ds";
+        TestDataUtil.createIdOnlyDataset(datasetName);
+        final Dataset dataset = TestDataUtil.getDataset(integrationUtil, datasetName);
+        final String indexPath = TestDataUtil.getIndexPath(integrationUtil, dataset, nodeId);
+        PersistentLocalResourceRepository localResourceRepository =
+                (PersistentLocalResourceRepository) ncAppCtx.getLocalResourceRepository();
+        final LocalResource resource = localResourceRepository.get(indexPath);
+        Assert.assertNotNull(resource);
+        final int partition = ((DatasetLocalResource) resource.getResource()).getPartition();
+        // simulate the resource being deleted while this node does not own its storage partition: the partition's
+        // new owner performs the delete, so the metadata file is gone but this node is never told about it
+        final FileReference indexDirRef = ncAppCtx.getIoManager().resolve(indexPath);
+        final File indexMetadataFile = new File(indexDirRef.getFile(), StorageConstants.METADATA_FILE_NAME);
+        Assert.assertTrue(indexMetadataFile.exists());
+        Files.delete(indexMetadataFile.toPath());
+        // releasing the partition must drop this node's view of its resources; otherwise creating a resource at the
+        // same path after the partition is re-acquired finds a leftover that no longer exists
+        localResourceRepository.invalidatePartitionResources(partition);
+        Assert.assertNull(localResourceRepository.get(indexPath));
     }
 
     private void ensureInvalidComponentDeleted(String indexDir, String componentSeq,
