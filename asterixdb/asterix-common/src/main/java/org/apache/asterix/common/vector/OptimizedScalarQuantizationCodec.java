@@ -32,9 +32,8 @@ import org.apache.hyracks.api.exceptions.HyracksDataException;
  * dequantize vectors during bulk load, static structure build, and query.
  *
  * <p>
- * For index {@code WITH similarity} values that map to cosine ({@code "cosine"},
- * {@code "cosine similarity"}), embedding and query vectors must be L2-normalized to
- * unit length before insert and search. The engine does not re-normalize during
+ * For an index whose {@code WITH similarity} is {@code "cosine"}, embedding and query vectors must
+ * be L2-normalized to unit length before insert and search. The engine does not re-normalize during
  * quantization.
  */
 public final class OptimizedScalarQuantizationCodec {
@@ -78,7 +77,7 @@ public final class OptimizedScalarQuantizationCodec {
     /**
      * Converts a distance metric string to SimilarityFunction enum.
      * 
-     * @param distanceMetric Distance metric string (e.g., "euclidean", "cosine similarity", "dot product")
+     * @param distanceMetric Distance metric string (e.g., "euclidean", "cosine", "dot")
      * @return Corresponding SimilarityFunction enum, or DOT_PRODUCT as default
      */
     public static SimilarityFunction fromDistanceMetric(String distanceMetric) {
@@ -89,17 +88,12 @@ public final class OptimizedScalarQuantizationCodec {
         if (metric == null) {
             return SimilarityFunction.DOT_PRODUCT;
         }
-        switch (metric) {
-            case EUCLIDEAN:
-                return SimilarityFunction.EUCLIDEAN;
-            case EUCLIDEAN_SQUARED:
-                return SimilarityFunction.EUCLIDEAN_SQUARED;
-            case COSINE:
-                return SimilarityFunction.COSINE;
-            case DOT:
-            default:
-                return SimilarityFunction.DOT_PRODUCT;
-        }
+        return switch (metric) {
+            case EUCLIDEAN -> SimilarityFunction.EUCLIDEAN;
+            case EUCLIDEAN_SQUARED -> SimilarityFunction.EUCLIDEAN_SQUARED;
+            case COSINE -> SimilarityFunction.COSINE;
+            case DOT -> SimilarityFunction.DOT_PRODUCT;
+        };
     }
 
     /**

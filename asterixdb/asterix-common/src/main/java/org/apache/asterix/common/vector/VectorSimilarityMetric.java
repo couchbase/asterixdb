@@ -21,6 +21,7 @@ package org.apache.asterix.common.vector;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -28,16 +29,15 @@ import java.util.Map;
  * the string aliases each metric is written as in {@code ann_distance(...)} and in the index
  * {@code similarity} option. The canonical name is the first alias.
  * <p>
- * This taxonomy backs the metric string handling in {@code VectorDistanceFunctionFactory} (the
- * index-internal distance function) and {@code VectorIndexAccessMethod.normalizeDistanceMetric}
- * (optimizer index selection). Keeping the
- * alias set in one place removes the previous requirement that those maps be edited in lockstep --
- * an alias that resolved in one but not another would trip an NPE on the index search path.
+ * Every entry point that reads a user-written metric resolves here: the {@code similarity} option on
+ * CREATE INDEX, the metric argument of {@code ann_distance} and {@code vector_distance} (through
+ * {@code VectorMetricFunctionMapUtil}), the CLUSTER BY {@code similarity} option, and optimizer index
+ * selection. One table means a spelling accepted by one is accepted by all of them.
  */
 public enum VectorSimilarityMetric {
     EUCLIDEAN("euclidean", "l2"),
     EUCLIDEAN_SQUARED("euclidean_squared", "l2_squared"),
-    COSINE("cosine", "cosine similarity"),
+    COSINE("cosine"),
     DOT("dot");
 
     private final List<String> aliases;
@@ -62,14 +62,23 @@ public enum VectorSimilarityMetric {
         Map<String, VectorSimilarityMetric> byAlias = new HashMap<>();
         for (VectorSimilarityMetric metric : values()) {
             for (String alias : metric.aliases) {
-                byAlias.put(alias, metric);
+                byAlias.put(normalize(alias), metric);
             }
         }
         BY_ALIAS = Collections.unmodifiableMap(byAlias);
     }
 
     /**
-     * Resolves an alias to its metric, case-insensitively and trimmed.
+     * The one spelling rule for a metric name: case-insensitive, surrounding whitespace ignored.
+     * Every entry point that accepts a user-written metric resolves through here, so a spelling
+     * taken by {@code CREATE INDEX} is taken by {@code ann_distance} and the reverse.
+     */
+    public static String normalize(String metric) {
+        return metric.toLowerCase(Locale.ROOT).trim();
+    }
+
+    /**
+     * Resolves an alias to its metric under {@link #normalize}.
      *
      * @return the matching metric, or {@code null} if the alias is not recognized.
      */
@@ -77,6 +86,6 @@ public enum VectorSimilarityMetric {
         if (alias == null) {
             return null;
         }
-        return BY_ALIAS.get(alias.toLowerCase().trim());
+        return BY_ALIAS.get(normalize(alias));
     }
 }

@@ -119,7 +119,7 @@ public class VTreeBulkLoaderAndGroupingOperatorDescriptor extends AbstractSingle
     /**
      * Convert distance metric string to IVTreeDistanceFunction implementation.
      *
-     * @param distanceType Distance metric string (e.g., "euclidean", "cosine similarity", etc.)
+     * @param distanceType Distance metric string (e.g., "euclidean", "cosine", etc.)
      * @return IVTreeDistanceFunction implementation
      * @throws IllegalArgumentException if distance type is not supported
      */

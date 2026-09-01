@@ -83,6 +83,13 @@ public class VectorDistanceFunctionFactory implements IVTreeDistanceFunctionFact
             throw HyracksDataException.create(ErrorCode.ILLEGAL_STATE,
                     "VectorDistanceFunctionFactory is missing its distance metric; resource is corrupt");
         }
-        return new VectorDistanceFunctionFactory(VectorSimilarityMetric.fromAlias(json.get(METRIC_FIELD).asText()));
+        String alias = json.get(METRIC_FIELD).asText();
+        VectorSimilarityMetric metric = VectorSimilarityMetric.fromAlias(alias);
+        if (metric == null) {
+            throw HyracksDataException.create(ErrorCode.ILLEGAL_STATE,
+                    "VectorDistanceFunctionFactory has an unrecognized distance metric `" + alias
+                            + "`; resource is corrupt");
+        }
+        return new VectorDistanceFunctionFactory(metric);
     }
 }

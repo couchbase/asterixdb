@@ -600,43 +600,30 @@ public class VectorIndexAccessMethod implements IAccessMethod {
     }
 
     /**
-     * Normalizes a distance metric string to its canonical form.
-     * Handles aliases and case-insensitive matching.
+     * Resolves the metric written in the query to its enum, or {@code null} if it is not a metric.
+     * <p>
+     * Index selection compares the result against the index's own metric, so {@code null} matches
+     * no index.
      *
-     * Supported metrics and aliases:
-     * - "euclidean", "l2" → "euclidean"
-     * - "euclidean_squared", "l2_squared" → "euclidean_squared"
-     * - "cosine", "cosine similarity" → "cosine"
-     * - "dot" → "dot"
-     *
-     * @param metric The distance metric string (may be null or empty)
-     * @return Normalized canonical metric name, or "euclidean" as default
+     * @param metric the metric as written in the query (may be null or blank)
+     * @return the metric, or {@code null} when absent or unrecognized
      */
-    public static String normalizeDistanceMetric(String metric) {
-        if (metric == null || metric.trim().isEmpty()) {
-            return VectorSimilarityMetric.EUCLIDEAN.canonical(); // Default metric
+    public static VectorSimilarityMetric resolveQueryMetric(String metric) {
+        if (metric == null || metric.isBlank()) {
+            return null;
         }
-        VectorSimilarityMetric resolved = VectorSimilarityMetric.fromAlias(metric);
-        // Unknown metric: return normalized as-is (the distance function handles/rejects it).
-        return (resolved != null) ? resolved.canonical() : metric.toLowerCase().trim();
+        return VectorSimilarityMetric.fromAlias(metric);
     }
 
     /**
-     * Extracts and normalizes the distance metric from a vector index.
-     *
-     * @param index The vector index
-     * @return Normalized distance metric string, or "euclidean" as default
+     * The metric an index was built with, or {@code null} for a non-vector index.
      */
-    public static String getIndexDistanceMetric(Index index) {
+    public static VectorSimilarityMetric getIndexMetric(Index index) {
         if (index.getIndexType() != IndexType.VTREE) {
-            return ""; // Default for non-vector indexes
+            return null;
         }
-
         Index.VectorIndexDetails vectorDetails = (Index.VectorIndexDetails) index.getIndexDetails();
-
-        // Already canonical: the metric was resolved through VectorSimilarityMetric at DDL time, so unlike
-        // the query-side hint (see normalizeDistanceMetric) there is no alias or casing left to normalize.
-        return vectorDetails.getVectorParameters().getSimilarity().canonical();
+        return vectorDetails.getVectorParameters().getSimilarity();
     }
 
     /**

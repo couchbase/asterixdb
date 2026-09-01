@@ -246,7 +246,7 @@ public class SecondaryVectorOperationsHelper extends SecondaryTreeIndexOperation
         int defaultNumClusters = Math.max(1, (int) Math.sqrt((double) datasetCardinality / numPartitions));
         int K = vectorParameters.getNumClusters().orElse(defaultNumClusters);
 
-        // Distance metric from index DDL (WITH similarity "euclidean"|"cosine"|"cosine similarity"|etc.).
+        // Distance metric from index DDL (WITH similarity "euclidean"|"cosine"|etc.).
         // For cosine, embeddings must be L2-normalized to unit length before insert; the engine does not normalize.
         VectorSimilarityMetric distanceMetric = vectorParameters.getSimilarity();
 

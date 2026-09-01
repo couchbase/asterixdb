@@ -29,6 +29,7 @@ import java.util.TreeMap;
 
 import org.apache.asterix.common.annotations.AnnSearchPreferenceAnnotation;
 import org.apache.asterix.common.config.DatasetConfig.IndexType;
+import org.apache.asterix.common.vector.VectorSimilarityMetric;
 import org.apache.asterix.metadata.declared.IIndexProvider;
 import org.apache.asterix.metadata.declared.MetadataProvider;
 import org.apache.asterix.metadata.entities.Index;
@@ -90,7 +91,7 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
     protected AbstractFunctionCallExpression annDistanceExpr = null;
     protected IVariableTypeEnvironment typeEnvironment = null;
     protected final OptimizableOperatorSubTree subTree = new OptimizableOperatorSubTree();
-    protected String queryDistanceMetric = null; // Distance metric from the query (e.g., "euclidean", "cosine")
+    protected VectorSimilarityMetric queryDistanceMetric = null;
 
     // SELECT operator info for filter pushdown
     protected SelectOperator selectOp = null;
@@ -591,7 +592,7 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
         // so there is no metric argument to read. It is used only for compile-time index selection.
         AnnSearchPreferenceAnnotation annHint = annDistanceExpr.getAnnotation(AnnSearchPreferenceAnnotation.class);
         if (annHint != null) {
-            queryDistanceMetric = VectorIndexAccessMethod.normalizeDistanceMetric(annHint.getMetric());
+            queryDistanceMetric = VectorIndexAccessMethod.resolveQueryMetric(annHint.getMetric());
         }
 
         // Now analyze the ANN_DISTANCE function arguments
@@ -702,9 +703,9 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
                     continue;
                 }
 
-                if (queryDistanceMetric != null && !queryDistanceMetric.isEmpty()) {
-                    String indexMetric = VectorIndexAccessMethod.getIndexDistanceMetric(index);
-                    if (queryDistanceMetric.equals(indexMetric)) {
+                if (queryDistanceMetric != null) {
+                    VectorSimilarityMetric indexMetric = VectorIndexAccessMethod.getIndexMetric(index);
+                    if (queryDistanceMetric == indexMetric) {
                         // Exact match: field name AND distance metric match.
                         exactMatch = new Pair<>(VectorIndexAccessMethod.INSTANCE, index);
                         break;
@@ -730,7 +731,7 @@ public class IntroduceTopKAccessMethodRule extends AbstractIntroduceAccessMethod
             result.add(exactMatch);
         } else if (fieldMatch != null) {
             Index idx = fieldMatch.second;
-            String indexMetric = VectorIndexAccessMethod.getIndexDistanceMetric(idx);
+            VectorSimilarityMetric indexMetric = VectorIndexAccessMethod.getIndexMetric(idx);
             LOGGER.warn("Distance metric mismatch: query uses '{}' but index '{}' uses '{}'. "
                     + "Falling back to full scan (KNN).", queryDistanceMetric, idx.getIndexName(), indexMetric);
         }

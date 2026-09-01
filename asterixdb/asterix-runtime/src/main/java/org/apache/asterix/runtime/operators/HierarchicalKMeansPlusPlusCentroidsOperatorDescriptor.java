@@ -174,7 +174,7 @@ public final class HierarchicalKMeansPlusPlusCentroidsOperatorDescriptor extends
         this.maxScalableKmeansIter = maxScalableKmeansIter;
         this.vectorDimension = vectorDimension;
         this.trainSeed = trainSeed;
-        // Distance function from index DDL (WITH similarity "euclidean"|"cosine"|"cosine similarity"|etc.); default euclidean squared
+        // Distance function from index DDL (WITH similarity "euclidean"|"cosine"|etc.); default euclidean squared
         this.similarityMetric = similarityMetric;
     }
 

@@ -33,7 +33,7 @@ import org.apache.asterix.lang.common.base.Literal;
 import org.apache.asterix.lang.common.expression.CallExpr;
 import org.apache.asterix.lang.common.expression.LiteralExpr;
 import org.apache.asterix.lang.common.util.ExpressionUtils;
-import org.apache.asterix.lang.common.util.VectorDistanceMetric;
+import org.apache.asterix.lang.common.util.VectorMetricFunctionMapUtil;
 import org.apache.asterix.lang.sqlpp.visitor.base.AbstractSqlppSimpleExpressionVisitor;
 import org.apache.asterix.om.functions.BuiltinFunctions;
 import org.apache.hyracks.util.annotations.AiProvenance;
@@ -78,11 +78,11 @@ public final class SqlppVectorDistanceRewriteVisitor extends AbstractSqlppSimple
             throw new CompilationException(ErrorCode.COMPILATION_ERROR, args.get(2).getSourceLocation(),
                     "vector_distance metric must be a compile-time string literal");
         }
-        Optional<String> builtinName = VectorDistanceMetric.resolve(metric);
+        Optional<String> builtinName = VectorMetricFunctionMapUtil.resolve(metric);
         if (builtinName.isEmpty()) {
             throw new CompilationException(ErrorCode.COMPILATION_ERROR, args.get(2).getSourceLocation(),
                     "unknown vector_distance metric '" + metric + "'; supported metrics: "
-                            + VectorDistanceMetric.supportedMetricsMessage());
+                            + VectorMetricFunctionMapUtil.supportedMetricsMessage());
         }
         List<Expression> targetArgs = new ArrayList<>(2);
         targetArgs.add(args.get(0));
@@ -118,11 +118,11 @@ public final class SqlppVectorDistanceRewriteVisitor extends AbstractSqlppSimple
             throw new CompilationException(ErrorCode.COMPILATION_ERROR, args.get(2).getSourceLocation(),
                     "ann_distance metric must be a compile-time string literal");
         }
-        Optional<String> builtinName = VectorDistanceMetric.resolve(metric);
+        Optional<String> builtinName = VectorMetricFunctionMapUtil.resolve(metric);
         if (builtinName.isEmpty()) {
             throw new CompilationException(ErrorCode.COMPILATION_ERROR, args.get(2).getSourceLocation(),
                     "unknown ann_distance metric '" + metric + "'; supported metrics: "
-                            + VectorDistanceMetric.supportedMetricsMessage());
+                            + VectorMetricFunctionMapUtil.supportedMetricsMessage());
         }
         double minProbeFraction = DEFAULT_MIN_PROBE_FRACTION;
         if (args.size() > 3) {

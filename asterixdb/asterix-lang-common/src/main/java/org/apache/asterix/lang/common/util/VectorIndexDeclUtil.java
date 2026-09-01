@@ -64,9 +64,14 @@ public class VectorIndexDeclUtil {
     /**
      * Human-readable list of the accepted {@code similarity} values, derived from
      * {@link VectorSimilarityMetric} so it never drifts from the actual set of recognized metrics.
+     * <p>
+     * Every alias is listed, not just the canonical name: {@code l2} and {@code l2_squared} are
+     * accepted by {@link VectorSimilarityMetric#fromAlias}, so a diagnostic that omits them tells
+     * the user a spelling is invalid when it is not.
      */
-    private static final String ALLOWED_SIMILARITY_VALUES = Arrays.stream(VectorSimilarityMetric.values())
-            .map(m -> m.canonical().toUpperCase(Locale.ROOT)).collect(Collectors.joining(", "));
+    private static final String ALLOWED_SIMILARITY_VALUES =
+            Arrays.stream(VectorSimilarityMetric.values()).flatMap(m -> m.aliases().stream())
+                    .map(alias -> alias.toUpperCase(Locale.ROOT)).collect(Collectors.joining(", "));
 
     private VectorIndexDeclUtil() {
     }
