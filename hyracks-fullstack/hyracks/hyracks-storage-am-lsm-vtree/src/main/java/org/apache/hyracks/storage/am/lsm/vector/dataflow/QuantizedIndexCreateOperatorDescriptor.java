@@ -136,12 +136,10 @@ public class QuantizedIndexCreateOperatorDescriptor extends AbstractSingleActivi
             // The global aggregate emits either the full parameter block or nothing, and nothing means the
             // sample yielded no usable vector.
             if (contentLength < PARAMS_PAYLOAD_BYTES) {
-                throw HyracksDataException.create(ErrorCode.ILLEGAL_STATE,
-                        "no usable quantization parameters for this vector index (" + contentLength + " of "
-                                + PARAMS_PAYLOAD_BYTES + " bytes). The sampled records yielded no usable vector for "
-                                + "the indexed field: it may be missing, null or not a list in every sampled record, "
-                                + "the dataset may be empty, or no sampled vector may match the dimension the index "
-                                + "declares.");
+                throw HyracksDataException.create(ErrorCode.VECTOR_INDEX_BUILD_FAILED,
+                        "The sampled records yielded no usable vector for the indexed field: it may be missing, "
+                                + "null or not a list in every sampled record, the dataset may be empty, or no "
+                                + "sampled vector may match the dimension the index declares.");
             }
 
             // Big-endian; DataInputStream is the exact inverse of the DataOutput/ByteBuffer writer and

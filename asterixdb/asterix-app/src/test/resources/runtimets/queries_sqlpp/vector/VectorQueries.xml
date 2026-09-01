@@ -80,6 +80,13 @@
         </compilation-unit>
     </test-case>
     <test-case FilePath="vector">
+        <compilation-unit name="create-index-vtree-null-embedding">
+            <output-dir compare="Text">create-index-vtree-null-embedding</output-dir>
+            <expected-error>Failed to build the vector index. The sampled records yielded no usable vector</expected-error>
+            <source-location>false</source-location>
+        </compilation-unit>
+    </test-case>
+    <test-case FilePath="vector">
         <compilation-unit name="create-index-vtree-type-mismatch">
             <output-dir compare="Text">create-index-vtree-type-mismatch</output-dir>
             <expected-error>VECTOR field annotation is not supported for TYPE BTREE</expected-error>

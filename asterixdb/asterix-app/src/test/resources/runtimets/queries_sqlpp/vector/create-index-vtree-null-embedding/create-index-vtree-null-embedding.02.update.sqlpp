@@ -1,0 +1,52 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+USE test;
+
+INSERT INTO MovieSmall ([
+  {"id": 1, "embedding": null},
+  {"id": 2, "embedding": null},
+  {"id": 3, "embedding": null},
+  {"id": 4, "embedding": null},
+  {"id": 5, "embedding": null},
+  {"id": 6, "embedding": null},
+  {"id": 7, "embedding": null},
+  {"id": 8, "embedding": null},
+  {"id": 9, "embedding": null},
+  {"id": 10, "embedding": null},
+  {"id": 11, "embedding": null},
+  {"id": 12, "embedding": null},
+  {"id": 13, "embedding": null},
+  {"id": 14, "embedding": null},
+  {"id": 15, "embedding": null},
+  {"id": 16, "embedding": null},
+  {"id": 17, "embedding": null},
+  {"id": 18, "embedding": null},
+  {"id": 19, "embedding": null},
+  {"id": 20, "embedding": null},
+  {"id": 21, "embedding": null},
+  {"id": 22, "embedding": null},
+  {"id": 23, "embedding": null},
+  {"id": 24, "embedding": null},
+  {"id": 25, "embedding": null},
+  {"id": 26, "embedding": null},
+  {"id": 27, "embedding": null},
+  {"id": 28, "embedding": null},
+  {"id": 29, "embedding": null},
+  {"id": 30, "embedding": null}
+]);
