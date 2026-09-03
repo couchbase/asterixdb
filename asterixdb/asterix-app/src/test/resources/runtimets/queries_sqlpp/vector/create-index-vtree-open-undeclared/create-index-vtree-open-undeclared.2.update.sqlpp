@@ -20,7 +20,7 @@
 USE test;
 // Same well-separated data as create-index-vtree (ids 1-15 near origin, 16-30 near [10,10,10,*],
 // 4th coord 0.1..1.5 so distances to [0,0,0,0] are unique), EXCEPT the embedding field is undeclared
-// (the type is OPEN). id 31 has NO embedding -> exercises EXCLUDE UNKNOWN KEY (must be skipped, not fail).
+// (the type is OPEN). id 31 has NO embedding -> must be skipped by the build, not fail.
 INSERT INTO MovieOpen ([
   {"id": 1, "embedding": [0.0, 0.0, 0.0, 0.1]},
   {"id": 2, "embedding": [0.0, 0.0, 0.0, 0.2]},

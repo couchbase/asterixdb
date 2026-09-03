@@ -36,5 +36,4 @@ CREATE INDEX idx_emb
     "epsilon": 0.5,
     "cross_pollination_m": 3,
     "rng_factor": 1.5
-  }
-  EXCLUDE UNKNOWN KEY;
+  };

@@ -17,8 +17,8 @@
  * under the License.
  */
 
-// An UNDECLARED vector field on an OPEN type is a supported, indexable case. The vector DDL requires
-// EXCLUDE UNKNOWN KEY, which skips records whose key is missing and indexes those that have it, so an
+// An UNDECLARED vector field on an OPEN type is a supported, indexable case. The build skips records
+// whose embedding is missing and indexes those that have it, so an
 // open/undeclared embedding present in the records builds and queries normally (it does not fail with
 // "no training vectors"). This test guards that behavior end to end.
 DROP DATAVERSE test IF EXISTS;

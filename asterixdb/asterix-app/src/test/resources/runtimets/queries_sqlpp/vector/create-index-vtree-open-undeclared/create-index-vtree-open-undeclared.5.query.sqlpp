@@ -18,7 +18,7 @@
  */
 
 USE test;
-// The 3 nearest to [0,0,0,0] are ids 1,2,3; id 31 (no embedding) is excluded by EXCLUDE UNKNOWN KEY.
+// The 3 nearest to [0,0,0,0] are ids 1,2,3; id 31 (no embedding) is not indexed.
 SELECT VALUE m.id
 FROM MovieOpen m
 ORDER BY ann_distance(m.embedding, [0.0, 0.0, 0.0, 0.0], "euclidean", 1.0)

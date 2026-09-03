@@ -1738,13 +1738,13 @@ CreateIndexStatement IndexSpecification(Token startStmtToken) throws ParseExcept
       if (hasVectorField && indexParams != null && !explicitVTree) {
         throw new SqlppParseException(getSourceLocation(startStmtToken),
           "VECTOR field annotation is not supported for TYPE " + indexParams.type
-            + ". Expected syntax: CREATE INDEX ... (field VECTOR) [TYPE VTREE] WITH {...} EXCLUDE UNKNOWN KEY");
+            + ". Expected syntax: CREATE INDEX ... (field VECTOR) [TYPE VTREE] WITH {...}");
       }
 
       // Validate: TYPE VTREE requires VECTOR annotation
       if (explicitVTree && !hasVectorField) {
         throw new SqlppParseException(getSourceLocation(startStmtToken),
-          "TYPE VTREE requires VECTOR field annotation. Expected syntax: CREATE INDEX ... (field VECTOR) TYPE VTREE WITH {...} EXCLUDE UNKNOWN KEY");
+          "TYPE VTREE requires VECTOR field annotation. Expected syntax: CREATE INDEX ... (field VECTOR) TYPE VTREE WITH {...}");
       }
 
       // TYPE VTREE is optional: no other index type accepts a VECTOR field, so the annotation alone
@@ -1777,10 +1777,10 @@ CreateIndexStatement IndexSpecification(Token startStmtToken) throws ParseExcept
             "CAST (...) is not supported for a vector index (TYPE VTREE)");
         }
 
-        // Validate that EXCLUDE UNKNOWN KEY is specified
-        if (excludeUnknown == null || !excludeUnknown) {
+        // A vector index neither persists nor reads this flag, so accepting it would have no effect.
+        if (excludeUnknown != null) {
           throw new SqlppParseException(getSourceLocation(startStmtToken),
-            "Vector index requires EXCLUDE UNKNOWN KEY");
+            "INCLUDE/EXCLUDE UNKNOWN KEY is not supported for a vector index (TYPE VTREE)");
         }
 
         // Create vector index statement

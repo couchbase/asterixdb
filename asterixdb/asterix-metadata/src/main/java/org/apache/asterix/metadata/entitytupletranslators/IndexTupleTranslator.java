@@ -750,11 +750,10 @@ public class IndexTupleTranslator extends AbstractTupleTranslator<Index> {
         }
         writeSearchKeyType(index);
 
-        // Every index type runs the writers below. A vector index has nothing to contribute to most of them
-        // — it is never enforced, takes no CAST, is not a sample index, and its EXCLUDE UNKNOWN KEY is
-        // implicit — and each writer is already guarded on the index type, so they no-op for VTREE. Returning
-        // early instead used to skip writeIndexCreator as well, which is *not* a no-op: the creator is read
-        // back generically for every index type, so a vector index silently lost its creator on reload.
+        // The writers below run for every index type, so do not return early from the switch above. Most
+        // are guarded and no-op for a type that has nothing to contribute, but writeIndexCreator is not
+        // type-guarded and must always run: the creator is read back generically, so skipping it makes an
+        // index silently lose its creator on reload.
         writeEnforced(index);
         writeSearchKeySourceIndicator(index);
         writeExcludeUnknownKey(index);

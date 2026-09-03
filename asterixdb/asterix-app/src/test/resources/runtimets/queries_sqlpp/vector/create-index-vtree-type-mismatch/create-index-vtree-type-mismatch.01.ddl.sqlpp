@@ -32,5 +32,4 @@ CREATE DATASET MovieSmall(MovieType) PRIMARY KEY id;
 CREATE INDEX idx_emb
   ON MovieSmall(embedding VECTOR)
   TYPE BTREE
-  WITH { "dimension": 4, "similarity": "euclidean" }
-  EXCLUDE UNKNOWN KEY;
+  WITH { "dimension": 4, "similarity": "euclidean" };
