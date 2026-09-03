@@ -92,7 +92,7 @@
     <!-- @pinned-with: ${awsjavasdk.version} -->
     <hadoop.version>3.4.3</hadoop.version>
     <jacoco.version>0.7.6.201602180812</jacoco.version>
-    <log4j.version>2.25.5</log4j.version>
+    <log4j.version>2.26.1</log4j.version>
     <awsjavasdk.version>2.54.11</awsjavasdk.version>
     <s3mock.version>5.2.0</s3mock.version>
     <parquet.version>1.18.0</parquet.version> <!-- NOTICE: please update transitives from parquet below on any change -->
