@@ -56,7 +56,6 @@ public class NcStatementsPrinterTest {
         Assert.assertEquals(statements.toString(), 1, statements.get(0).get("statement").asInt());
         Assert.assertEquals(statements.toString(), 2, statements.get(1).get("statement").asInt());
         Assert.assertEquals(statements.toString(), "success", statements.get(0).get("status").asText());
-        Assert.assertNotNull(statements.toString(), statements.get(0).get("kind"));
         Assert.assertNotNull(statements.toString(), statements.get(0).get("metrics"));
     }
 
@@ -83,16 +82,6 @@ public class NcStatementsPrinterTest {
 
         Assert.assertEquals(statements.toString(), 1, statements.size());
         Assert.assertEquals(statements.toString(), 1, statements.get(0).get("statement").asInt());
-    }
-
-    /** An extension statement is named by its name, since its kind alone does not identify it. */
-    @Test
-    public void anExtensionStatementIsReportedByName() throws Exception {
-        StatementInfo extension = new StatementInfo(1, Statement.Kind.EXTENSION, "DESCRIBE LINK");
-        extension.setStats(new Stats());
-        JsonNode statements = print(List.of(extension));
-
-        Assert.assertEquals(statements.toString(), "DESCRIBE LINK", statements.get(0).get("kind").asText());
     }
 
     private static StatementInfo statement(int position, Statement.Kind kind) {

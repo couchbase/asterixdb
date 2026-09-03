@@ -49,7 +49,7 @@ import org.apache.hyracks.api.result.IResultSet;
 
 /**
  * Prints what each statement produced, as a {@value #FIELD_NAME} array holding one object per statement: its position,
- * kind, signature, rows or handle, plans, outcome, error and metrics. A request carrying one statement is printed by the
+ * signature, rows or handle, plans, outcome, error and metrics. A request carrying one statement is printed by the
  * pre-existing path instead; see {@code NCQueryServiceServlet#useMultiStatementResponse}.
  * <p>
  * {@code metrics} comes after {@code results} because the row count and size are only final once the rows are streamed.
@@ -58,7 +58,6 @@ public class NcStatementsPrinter implements IResponseFieldPrinter {
 
     public static final String FIELD_NAME = "statements";
     public static final String POSITION_FIELD_NAME = "statement";
-    public static final String KIND_FIELD_NAME = "kind";
     /**
      * What a statement reports for itself. The time the request took, and whether it failed, belong to the request: a
      * statement that failed says so with its status and its errors.
@@ -135,7 +134,6 @@ public class NcStatementsPrinter implements IResponseFieldPrinter {
                 ? new ResultReader(resultSet, resultSetInfo.getJobId(), resultSetInfo.getResultSetId()) : null;
 
         fields.add(w -> printField(w, POSITION_FIELD_NAME, String.valueOf(statement.getPosition())));
-        fields.add(w -> printField(w, KIND_FIELD_NAME, quoted(statementKind(statement))));
         // a statement that returns rows describes them, as the flat response does; the signature is the default one
         // unless the client asked for a typed one, exactly as SignaturePrinter.newInstance decides for a request
         if (printSignature && resultSetInfo != null) {
@@ -227,14 +225,6 @@ public class NcStatementsPrinter implements IResponseFieldPrinter {
         List<ICodedMessage> warnings = new ArrayList<>(statementWarnings.size());
         statementWarnings.forEach(warning -> warnings.add(ExecutionWarning.of(warning)));
         return new WarningsPrinter(warnings);
-    }
-
-    /** The kind of a statement, or for an extension statement the name that identifies it. */
-    private static String statementKind(StatementInfo statement) {
-        if (statement.getName() != null) {
-            return statement.getName();
-        }
-        return statement.getKind() == null ? "unknown" : statement.getKind().getDisplayName();
     }
 
     /**
