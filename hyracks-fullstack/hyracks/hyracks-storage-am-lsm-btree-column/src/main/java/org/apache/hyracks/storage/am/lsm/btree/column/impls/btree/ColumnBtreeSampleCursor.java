@@ -423,8 +423,17 @@ public class ColumnBtreeSampleCursor extends EnforcedIndexCursor implements ITre
     //  Phase 2: Sorted column collection — one mega-page load per page
     // ──────────────────────────────────────────────────────────────────────
 
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "Release the final mega-leaf's pages when Phase 2 is exhausted instead of holding them "
+            + "until doClose()")
     private boolean yieldNextFromPhase2() throws HyracksDataException {
         if (yieldPos >= collectedCount) {
+            /*
+             * Phase 2 releases a mega-leaf's pages only when the page id changes, so when the samples run out
+             * the last page's column set is still pinned. Release it here rather than holding a full mega-leaf
+             * of frames until doClose(). releasePages() is idempotent: context.release/unpinAll and
+             * unpinColumnsPages clear their page lists, and unpinCurrentPage0 no-ops on a null page0.
+             */
+            releasePages();
             return false;
         }
 

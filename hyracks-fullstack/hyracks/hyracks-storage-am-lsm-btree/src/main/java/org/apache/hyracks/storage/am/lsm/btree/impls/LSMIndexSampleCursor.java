@@ -313,6 +313,8 @@ public class LSMIndexSampleCursor extends EnforcedIndexCursor implements ILSMInd
     }
 
     @Override
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "Close each exhausted per-component sample cursor before advancing, so its pinned pages are "
+            + "not retained for the rest of the scan")
     protected boolean doHasNext() throws HyracksDataException {
         // Need to find the next tuple in the sample.
         if (numDiskBTrees == 0 || sampledCount == sampleCardinality) {
@@ -329,7 +331,17 @@ public class LSMIndexSampleCursor extends EnforcedIndexCursor implements ILSMInd
                 return true;
             }
 
-            // Current disk component cursor has no more tuples, move to the next
+            /*
+             * Current disk component cursor has no more tuples, move to the next. Close it first: an exhausted
+             * but still-open cursor holds its pinned pages until its own close(), and for a columnar component
+             * that is page0 plus the whole column page set of the last mega-leaf it materialized (up to
+             * storage.column.max.leaf.node.size / bufferCachePageSize frames, and ANALYZE projects every field
+             * so effectively the entire leaf). Leaving every visited component open therefore pins
+             * numDiskBTrees x megaLeafPages frames for the remainder of the scan, which exhausts the buffer
+             * cache on datasets with many disk components and wide records ("Unable to find free page in buffer
+             * cache after N cycles"). close() is idempotent, so closeCursors() may still close it again.
+             */
+            btreeCursors[currentDiskComponentIndex].close();
             currentDiskComponentIndex++;
             if (currentDiskComponentIndex >= numDiskBTrees) {
                 return false; // No more disk components to sample from.
