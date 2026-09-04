@@ -97,12 +97,14 @@ public final class ClusterByOptions {
         private final String metric;
         // The query's seed, or null when absent; the expansion turns null into its own fixed defaults.
         private final Integer seed;
+        private final Integer numIterations;
 
-        public KmeansOptions(int numClusters, String initMode, String metric, Integer seed) {
+        public KmeansOptions(int numClusters, String initMode, String metric, Integer seed, Integer numIterations) {
             this.numClusters = numClusters;
             this.initMode = initMode;
             this.metric = metric;
             this.seed = seed;
+            this.numIterations = numIterations;
         }
 
         public int getNumClusters() {
@@ -121,6 +123,10 @@ public final class ClusterByOptions {
             return seed;
         }
 
+        public Integer getNumIterations() {
+            return numIterations;
+        }
+
         @Override
         public boolean equals(Object o) {
             if (this == o) {
@@ -131,18 +137,19 @@ public final class ClusterByOptions {
             }
             KmeansOptions that = (KmeansOptions) o;
             return numClusters == that.numClusters && Objects.equals(initMode, that.initMode)
-                    && Objects.equals(metric, that.metric) && Objects.equals(seed, that.seed);
+                    && Objects.equals(metric, that.metric) && Objects.equals(seed, that.seed)
+                    && Objects.equals(numIterations, that.numIterations);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(numClusters, initMode, metric, seed);
+            return Objects.hash(numClusters, initMode, metric, seed, numIterations);
         }
 
         @Override
         public String toString() {
             return "kmeans: {num_clusters: " + numClusters + ", init_mode: " + initMode + ", metric: " + metric
-                    + ", seed: " + seed + "}";
+                    + ", seed: " + seed + ", num_iterations: " + numIterations + "}";
         }
     }
 }

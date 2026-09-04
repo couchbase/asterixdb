@@ -61,7 +61,7 @@ distribute result [$$76]
                                 -- STABLE_SORT [$$86(ASC)]  |PARTITIONED|
                                   exchange
                                   -- ONE_TO_ONE_EXCHANGE  |PARTITIONED|
-                                    kmeans-stage $$86 <- lloyd-loop $$85 vs pool $$84 by euclidean_squared
+                                    kmeans-stage $$86 <- lloyd-loop 3 iterations of $$85 vs pool $$84 by euclidean_squared
                                     -- KMEANS_LLOYD_LOOP  |PARTITIONED|
                                       exchange
                                       -- ONE_TO_ONE_EXCHANGE  |PARTITIONED|

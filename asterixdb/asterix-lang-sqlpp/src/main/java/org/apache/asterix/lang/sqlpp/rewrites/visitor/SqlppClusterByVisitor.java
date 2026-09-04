@@ -95,7 +95,8 @@ import org.apache.hyracks.util.annotations.AiProvenance;
  * <p>
  * {@code CLUSTER AS} members hold the block's FROM and LET bindings, one field per binding, as
  * {@code GROUP AS} does. Supports K-Means only, with the {@code kmeans_parallel} (default) and
- * {@code random} init modes, the Euclidean(-squared) metrics, and a fixed number of Lloyd iterations.
+ * {@code random} init modes, the Euclidean(-squared) metrics, and an optional {@code num_iterations} count
+ * of Lloyd iterations (3 by default, capped by the rule that expands the operator).
  */
 @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.ASSISTED)
 public class SqlppClusterByVisitor extends AbstractSqlppSimpleExpressionVisitor {
@@ -108,6 +109,7 @@ public class SqlppClusterByVisitor extends AbstractSqlppSimpleExpressionVisitor 
     private static final String OPT_NUM_CLUSTERS = "num_clusters";
     private static final String OPT_INIT_MODE = "init_mode";
     private static final String OPT_SEED = "seed";
+    private static final String OPT_NUM_ITERATIONS = "num_iterations";
     private static final String OPT_SIMILARITY = "similarity";
     private static final String OPT_CROSS_POLLINATION = "cross_pollination";
 
@@ -119,10 +121,10 @@ public class SqlppClusterByVisitor extends AbstractSqlppSimpleExpressionVisitor 
     private static final int MAX_NUM_CLUSTERS = 65536;
 
     private static final Set<String> KNOWN_OPTIONS = Set.of(OPT_ALGORITHM, OPT_NUM_CLUSTERS, OPT_SIMILARITY,
-            OPT_CROSS_POLLINATION, OPT_INIT_MODE, OPT_DIMENSION, OPT_SEED);
+            OPT_CROSS_POLLINATION, OPT_INIT_MODE, OPT_DIMENSION, OPT_SEED, OPT_NUM_ITERATIONS);
     // Listed on an unknown-option error; a literal because Set.of iterates in a per-JVM salted order.
-    private static final String KNOWN_OPTIONS_DISPLAY =
-            "clustering_algorithm, dimension, num_clusters, init_mode, seed, similarity, cross_pollination";
+    private static final String KNOWN_OPTIONS_DISPLAY = "clustering_algorithm, dimension, num_clusters, init_mode, "
+            + "seed, similarity, cross_pollination, num_iterations";
     // The two fields the cluster descriptor exposes; their accesses substitute to the output variables.
     private static final String SC_CLUSTER_ID = ClusterByOptions.FIELD_CLUSTER_ID;
     private static final String SC_CENTROID = ClusterByOptions.FIELD_CENTROID;
@@ -469,10 +471,11 @@ public class SqlppClusterByVisitor extends AbstractSqlppSimpleExpressionVisitor 
         rejectCrossPollination(opts, loc);
         String metric = metricOf(opts, loc);
         Integer seed = seedOf(opts, loc);
+        Integer numIterations = numIterationsOf(opts, loc);
         String initMode = initModeOf(opts, loc);
         int dimension = dimensionOf(dimensionNode, loc);
         return new ClusterByOptions(ALGORITHM_KMEANS, dimension,
-                new ClusterByOptions.KmeansOptions(k, initMode, metric, seed));
+                new ClusterByOptions.KmeansOptions(k, initMode, metric, seed, numIterations));
     }
 
     /** {@code num_clusters}: mandatory for K-Means, a positive integer, at most {@link #MAX_NUM_CLUSTERS}. */
@@ -557,6 +560,28 @@ public class SqlppClusterByVisitor extends AbstractSqlppSimpleExpressionVisitor 
         } catch (NumberFormatException e) {
             throw new CompilationException(ErrorCode.COMPILATION_ERROR, loc,
                     "CLUSTER BY 'seed' must be a 32-bit integer, but was: " + seed);
+        }
+    }
+
+    /**
+     * The query's {@code num_iterations}, a positive integer, or null when absent -- the rule that expands the
+     * operator applies its own default and caps what the query asked for. Optional: how many refinement
+     * iterations to run is a quality/cost trade the query may make, within a bound it need not know.
+     */
+    private static Integer numIterationsOf(Map<String, String> opts, SourceLocation loc) throws CompilationException {
+        String numIterations = opts.get(OPT_NUM_ITERATIONS);
+        if (numIterations == null) {
+            return null;
+        }
+        try {
+            int iterations = Integer.parseInt(numIterations.trim());
+            if (iterations <= 0) {
+                throw new NumberFormatException(numIterations);
+            }
+            return iterations;
+        } catch (NumberFormatException e) {
+            throw new CompilationException(ErrorCode.COMPILATION_ERROR, loc,
+                    "CLUSTER BY 'num_iterations' must be a positive integer, but was: " + numIterations);
         }
     }
 

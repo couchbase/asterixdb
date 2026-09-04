@@ -320,4 +320,15 @@
             <expected-error>CLUSTER BY: 'k' belongs to an enclosing query</expected-error>
         </compilation-unit>
     </test-case>
+    <!-- num_iterations end to end, over two pairs 10 units apart, where the clustering is the same at every
+         iteration count: 1, 4, the cap, a value above it (clamped, not refused), and the string form. The
+         same five counts follow as EXPLAIN, where the count is visible on the lloyd-loop stage and the
+         clamp can be read off the plan. The last query asks for zero, which is refused rather than
+         defaulted away. -->
+    <test-case FilePath="cluster-by">
+        <compilation-unit name="kmeans-num-iterations">
+            <output-dir compare="Text">kmeans-num-iterations</output-dir>
+            <expected-error>CLUSTER BY 'num_iterations' must be a positive integer, but was: 0</expected-error>
+        </compilation-unit>
+    </test-case>
 </test-group>

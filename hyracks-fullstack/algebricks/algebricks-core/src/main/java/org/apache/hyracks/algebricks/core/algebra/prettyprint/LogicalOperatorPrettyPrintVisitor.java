@@ -378,8 +378,8 @@ public class LogicalOperatorPrettyPrintVisitor extends AbstractLogicalOperatorPr
                         .append(" (seed ").append(String.valueOf(op.getSeed())).append(')');
                 break;
             default:
-                out.append(' ').append(str(op.getVectorVariable())).append(" vs pool ")
-                        .append(str(op.getPoolVariable()));
+                out.append(' ').append(String.valueOf(op.getLoopRounds())).append(" iterations of ")
+                        .append(str(op.getVectorVariable())).append(" vs pool ").append(str(op.getPoolVariable()));
                 break;
         }
         out.append(" by ").append(op.getMetric());

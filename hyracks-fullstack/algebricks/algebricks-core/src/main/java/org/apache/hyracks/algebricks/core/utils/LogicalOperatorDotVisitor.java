@@ -363,8 +363,8 @@ public class LogicalOperatorDotVisitor implements ILogicalOperatorVisitor<String
                         .append(" (seed ").append(op.getSeed()).append(')');
                 break;
             default:
-                stringBuilder.append(' ').append(str(op.getVectorVariable())).append(" vs pool ")
-                        .append(str(op.getPoolVariable()));
+                stringBuilder.append(' ').append(op.getLoopRounds()).append(" iterations of ")
+                        .append(str(op.getVectorVariable())).append(" vs pool ").append(str(op.getPoolVariable()));
                 break;
         }
         stringBuilder.append(" by ").append(op.getMetric());

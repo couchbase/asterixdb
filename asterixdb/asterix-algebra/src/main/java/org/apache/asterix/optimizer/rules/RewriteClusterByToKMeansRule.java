@@ -85,8 +85,9 @@ public class RewriteClusterByToKMeansRule implements IAlgebraicRewriteRule {
     /** k-means||: rounds of oversampling, and the pool width drawn per round as a multiple of k. */
     private static final int OVERSAMPLING_ROUNDS = 5;
     private static final int OVERSAMPLING_FACTOR_PER_K = 2;
-    /** Refinement iterations after seeding. */
-    private static final int LLOYD_ITERATIONS = 3;
+    /** Refinement iterations after seeding, when the query's 'num_iterations' names none. */
+    private static final int LLOYD_ITERATIONS_DEFAULT = 3;
+    private static final int LLOYD_ITERATIONS_MAX = 20;
     // Base for the per-round sampling seed (seed_r = base + r); the descriptor mixes in the partition id.
     // A prime, which keeps neighbouring (round, partition) pairs from starting correlated generator states.
     private static final long SEED_BASE = 1_000_003L;
@@ -103,6 +104,16 @@ public class RewriteClusterByToKMeansRule implements IAlgebraicRewriteRule {
 
     private static ClusterByOptions.KmeansOptions kmeans(ClusterByOperator cop) {
         return options(cop).getKmeans();
+    }
+
+    /**
+     * How many Lloyd iterations to run: what the query asked for, capped at {@link #LLOYD_ITERATIONS_MAX}, or
+     * {@link #LLOYD_ITERATIONS_DEFAULT} when it asked for nothing. Over the cap is clamped rather than
+     * refused -- the request is for more refinement, and the ceiling is this rule's, not the query's.
+     */
+    private static int lloydIterations(ClusterByOperator cop) {
+        Integer requested = kmeans(cop).getNumIterations();
+        return requested == null ? LLOYD_ITERATIONS_DEFAULT : Math.min(requested, LLOYD_ITERATIONS_MAX);
     }
 
     @Override
@@ -217,7 +228,7 @@ public class RewriteClusterByToKMeansRule implements IAlgebraicRewriteRule {
         Pair<Mutable<ILogicalOperator>, LogicalVariable> input =
                 branchOf(shared, cop.getVectorVariable(), context, loc);
         KMeansStageOperator lloyd = stage(cop, KMeansStageOperator.Mode.LLOYD_LOOP, context, ref(input.second),
-                ref(centroidsVar), kmeans(cop).getNumClusters(), 0L, LLOYD_ITERATIONS);
+                ref(centroidsVar), kmeans(cop).getNumClusters(), 0L, lloydIterations(cop));
         lloyd.getInputs().add(input.first);
         lloyd.getInputs().add(centroidsIn);
         // The execution mode is derived from the input, as GROUP BY's is: a partitioned input gives one loop

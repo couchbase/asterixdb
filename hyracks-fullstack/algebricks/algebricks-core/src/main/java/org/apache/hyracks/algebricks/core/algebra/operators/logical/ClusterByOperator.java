@@ -44,7 +44,7 @@ import org.apache.hyracks.util.annotations.AiProvenance;
  * CLUSTER BY as the query expressed it. Consumes the block's rows and emits one tuple per cluster: its id,
  * its centroid and its members. Blocking; non-propagating, like GROUP BY.
  * <p>
- * The node says <em>what</em> to compute (its validated options) and has no physical operator of its
+ * The node says <em>what</em> to compute (its {@code ClusterByOptions}) and has no physical operator of its
  * own. Every logical rule sees one opaque node over one ordinary input, and a rule at the head of the
  * physical phase expands it into the stages that implement the algorithm, the way the combiner rules expand
  * one group-by into a local and a global one.
@@ -69,7 +69,7 @@ public class ClusterByOperator extends AbstractOperatorWithNestedPlans {
     private final Object clusterIdVarType;
     private final Object centroidVarType;
     private final Object membersVarType;
-    // The validated options, opaque to Algebricks the way the variable types are.
+    // The validated options, immutable and shared with the language clause that carried them.
     private final Object options;
     // Types the members list from the member record once the input is typed, since a list type is an
     // Asterix notion the operator cannot form itself.
