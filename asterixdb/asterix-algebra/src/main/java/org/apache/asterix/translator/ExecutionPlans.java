@@ -32,6 +32,8 @@ public class ExecutionPlans implements Serializable {
     private String statementCategory;
     private String statementParameters;
     private boolean explainOnly;
+    /** What an EXPLAIN or ADVISE rendered while compiling. */
+    private String compileTimeResult;
 
     public ExecutionPlans() {
     }
@@ -47,6 +49,7 @@ public class ExecutionPlans implements Serializable {
         statementCategory = other.statementCategory;
         statementParameters = other.statementParameters;
         explainOnly = other.explainOnly;
+        compileTimeResult = other.compileTimeResult;
     }
 
     /** Forgets the plans of the statement that just finished, so the next one does not report them as its own. */
@@ -92,6 +95,7 @@ public class ExecutionPlans implements Serializable {
         statementCategory = null;
         statementParameters = null;
         explainOnly = false;
+        compileTimeResult = null;
     }
 
     public String getExpressionTree() {
@@ -164,5 +168,13 @@ public class ExecutionPlans implements Serializable {
 
     public void setExplainOnly(boolean explainOnly) {
         this.explainOnly = explainOnly;
+    }
+
+    public String getCompileTimeResult() {
+        return compileTimeResult;
+    }
+
+    public void setCompileTimeResult(String compileTimeResult) {
+        this.compileTimeResult = compileTimeResult;
     }
 }

@@ -42,6 +42,7 @@ import org.apache.asterix.translator.IStatementExecutor.ResultDelivery;
 import org.apache.asterix.translator.IStatementExecutor.ResultSetInfo;
 import org.apache.asterix.translator.IStatementExecutor.StatementInfo;
 import org.apache.asterix.translator.IStatementExecutor.Stats;
+import org.apache.asterix.translator.SessionConfig;
 import org.apache.asterix.translator.SessionOutput;
 import org.apache.hyracks.api.exceptions.HyracksDataException;
 import org.apache.hyracks.api.exceptions.Warning;
@@ -133,13 +134,17 @@ public class NcStatementsPrinter implements IResponseFieldPrinter {
         ResultReader rows = resultSetInfo != null && delivery == ResultDelivery.IMMEDIATE
                 ? new ResultReader(resultSet, resultSetInfo.getJobId(), resultSetInfo.getResultSetId()) : null;
 
+        String compileTimeResult = plans == null ? null : plans.getCompileTimeResult();
         fields.add(w -> printField(w, POSITION_FIELD_NAME, String.valueOf(statement.getPosition())));
         // a statement that returns rows describes them, as the flat response does; the signature is the default one
         // unless the client asked for a typed one, exactly as SignaturePrinter.newInstance decides for a request
-        if (printSignature && resultSetInfo != null) {
+        if (printSignature && (resultSetInfo != null || compileTimeResult != null)) {
             IResponseFieldPrinter signature =
                     plans == null ? SignaturePrinter.INSTANCE : SignaturePrinter.newInstance(plans);
             fields.add(w -> printNested(w, signature));
+        }
+        if (compileTimeResult != null) {
+            fields.add(w -> printCompileTimeResult(w, compileTimeResult));
         }
         if (resultSetInfo != null) {
             if (delivery == ResultDelivery.IMMEDIATE) {
@@ -187,22 +192,41 @@ public class NcStatementsPrinter implements IResponseFieldPrinter {
     /** Streams this statement's rows; every statement has already run by the time this is reached. */
     private void printRows(PrintWriter pw, ResultReader reader, ResultSetInfo resultSetInfo, Stats stats)
             throws HyracksDataException {
+        PrintWriter rows = beginRows(pw);
+        try {
+            ResultUtil.printResults(appCtx, reader, undecorated(rows), stats, resultSetInfo.getRecordType());
+        } finally {
+            rows.flush();
+        }
+    }
+
+    private void printCompileTimeResult(PrintWriter pw, String compileTimeResult) throws HyracksDataException {
+        PrintWriter rows = beginRows(pw);
+        SessionConfig config = sessionOutput.config();
+        boolean quoteRecord = config.is(SessionConfig.FORMAT_QUOTE_RECORD);
+        try {
+            config.set(SessionConfig.FORMAT_QUOTE_RECORD, config.getPlanFormat() == SessionConfig.PlanFormat.STRING);
+            ResultUtil.printResults(appCtx, compileTimeResult, undecorated(rows), new Stats(), null);
+        } finally {
+            config.set(SessionConfig.FORMAT_QUOTE_RECORD, quoteRecord);
+            rows.flush();
+        }
+    }
+
+    private static PrintWriter beginRows(PrintWriter pw) {
         pw.print(FIELD_INDENT);
         pw.print(quoted(ResultsPrinter.FIELD_NAME));
         pw.print(": ");
-        PrintWriter rows = new PrintWriter(pw) {
+        return new PrintWriter(pw) {
             @Override
             public void println(String x) {
                 print(x);
             }
         };
-        // no result decorators: this printer names the field itself, so the decorators that name and number it must not
-        SessionOutput undecorated = new SessionOutput(sessionOutput.config(), rows);
-        try {
-            ResultUtil.printResults(appCtx, reader, undecorated, stats, resultSetInfo.getRecordType());
-        } finally {
-            rows.flush();
-        }
+    }
+
+    private SessionOutput undecorated(PrintWriter rows) {
+        return new SessionOutput(sessionOutput.config(), rows);
     }
 
     private static void printNested(PrintWriter pw, IResponseFieldPrinter printer) throws HyracksDataException {

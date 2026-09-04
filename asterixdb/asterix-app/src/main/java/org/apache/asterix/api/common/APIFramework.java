@@ -480,6 +480,7 @@ public class APIFramework {
             IndexAdvisor advisor) throws AlgebricksException {
 
         try {
+            executionPlans.setCompileTimeResult(advisor.getResultJson().toString());
             printer.addResultPrinter(
                     new IndexAdviseResultsPrinter(metadataProvider.getApplicationContext(), advisor, output));
             printer.printResults();
@@ -494,6 +495,7 @@ public class APIFramework {
             if (printSignature) {
                 printer.addResultPrinter(SignaturePrinter.INSTANCE);
             }
+            executionPlans.setCompileTimeResult(executionPlans.getOptimizedLogicalPlan());
             printer.addResultPrinter(new ExplainOnlyResultsPrinter(metadataProvider.getApplicationContext(),
                     executionPlans.getOptimizedLogicalPlan(), output));
             printer.printResults();
