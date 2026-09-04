@@ -91,7 +91,9 @@ public class NCLogConfigurationFactory extends ConfigurationFactory {
 
     @Override
     public Configuration getConfiguration(final LoggerContext loggerContext, final ConfigurationSource source) {
-        return getConfiguration(loggerContext, source.toString(), null);
+        // the cast picks the URI overload; log4j 2.26 added a List<URI> one, which an
+        // untyped null now matches equally well
+        return getConfiguration(loggerContext, source.toString(), (URI) null);
     }
 
     @Override
