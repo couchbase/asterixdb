@@ -295,7 +295,6 @@ public class LSMPrimaryUpsertOperatorNodePushable extends LSMIndexInsertUpdateDe
     @Override
     public void open() throws HyracksDataException {
         accessor = new FrameTupleAccessor(inputRecDesc);
-        writeBuffer = ctx.allocateVSizeFrame();
         writer.open();
         writerOpen = true;
         try {
