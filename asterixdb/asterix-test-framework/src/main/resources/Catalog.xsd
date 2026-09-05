@@ -226,23 +226,62 @@
       <!--    the QueryFileExtension                                         -->
 
       <xs:attribute name="FilePath" type="test:SimplifiedRelativeFilePath" use="required"/>
-      <xs:attribute name="category" type="test:category-enum"/>
+      <xs:attribute name="category" type="test:category-list"/>
       <xs:attribute name="repeat" type="xs:positiveInteger" default="1" />
       <xs:attribute name="check-warnings" type="xs:boolean" default="false"/>
    </xs:complexType>
 
+   <!-- category-list type                                                   -->
+   <!--    A whitespace-separated list of the categories a test is in.       -->
+
+   <xs:simpleType name="category-list">
+      <xs:annotation>
+         <xs:documentation>
+            The categories a test case is in, whitespace-separated. A test can be in more than
+            one, e.g. category="slow requires-stable-topology".
+         </xs:documentation>
+      </xs:annotation>
+
+      <xs:list itemType="test:category-enum"/>
+   </xs:simpleType>
+
    <!-- category-enum type                                                   -->
-   <!--    Identify which category of test this is. Currently only "slow".   -->
+   <!--    Identify which category of test this is.                          -->
 
    <xs:simpleType name="category-enum">
       <xs:annotation>
          <xs:documentation>
-            Identify the category of test, for limiting when it is run.
+            Identify a category of test, for limiting when it is run. A category names something
+            the test needs from the suite running it, so that a suite which cannot provide it can
+            leave the test out; it is up to each consumer to decide which categories it honours.
          </xs:documentation>
       </xs:annotation>
 
       <xs:restriction base="xs:string">
-         <xs:enumeration value="slow"/>
+         <xs:enumeration value="slow">
+            <xs:annotation>
+               <xs:documentation>
+                  Runs long enough that it is skipped unless -DrunSlowAQLTests=true.
+               </xs:documentation>
+            </xs:annotation>
+         </xs:enumeration>
+         <xs:enumeration value="requires-stable-topology">
+            <xs:annotation>
+               <xs:documentation>
+                  Asserts something that is a function of the cluster topology -- an exact
+                  optimizer plan, say -- and so cannot run in a suite that changes the topology
+                  underneath it.
+               </xs:documentation>
+            </xs:annotation>
+         </xs:enumeration>
+         <xs:enumeration value="requires-default-frame-size">
+            <xs:annotation>
+               <xs:documentation>
+                  Returns incorrect results at a reduced frame size, so it cannot run in a suite
+                  that configures one.
+               </xs:documentation>
+            </xs:annotation>
+         </xs:enumeration>
       </xs:restriction>
    </xs:simpleType>
 
