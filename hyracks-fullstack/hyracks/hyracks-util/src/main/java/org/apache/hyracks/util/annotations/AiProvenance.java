@@ -205,6 +205,7 @@ public @interface AiProvenance {
         // =========================
         // Anthropic — Claude Fable
         // =========================
+        CLAUDE_FABLE_5_1(ANTHROPIC, "claude-fable-5-1", "Claude Fable 5.1"),
         CLAUDE_FABLE_5(ANTHROPIC, "claude-fable-5", "Claude Fable 5"),
 
         // =========================
