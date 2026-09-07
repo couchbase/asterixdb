@@ -46,7 +46,8 @@ public interface IVirtualBufferCache extends IBufferCache {
     int getUsage();
 
     /**
-    * Register the memory component when it is allocated
+    * Register the memory component when it joins this cache, which may be before it is allocated; a component
+    * takes its pages when it is first activated, not when it is registered
     * @param memoryComponent
     */
     void register(ILSMMemoryComponent memoryComponent);

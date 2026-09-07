@@ -48,7 +48,9 @@ import org.apache.hyracks.storage.am.lsm.common.api.ILSMIndex;
 import org.apache.hyracks.storage.am.lsm.common.api.ILSMIndexAccessor;
 import org.apache.hyracks.storage.am.lsm.common.api.ILSMIndexOperationContext;
 import org.apache.hyracks.storage.am.lsm.common.api.ILSMMemoryComponent;
+import org.apache.hyracks.storage.am.lsm.common.api.IVirtualBufferCache;
 import org.apache.hyracks.storage.am.lsm.common.impls.AsynchronousScheduler;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -89,6 +91,74 @@ public class LSMBTreeComponentLifecycleTest {
             throws Exception {
         return createTestContext(fieldSerdes, numKeys, harness.getIOScheduler(),
                 harness.getIOOperationCallbackFactory());
+    }
+
+    /**
+     * An index allocates every one of its memory components on the first write to it, and each one takes the pages
+     * its BTree pins when it is created. Only the component which is written is ever flushed, and only a flush
+     * returns a component's pages, so the components the index has not switched to yet hold pages for data which
+     * never arrived, for as long as the index stays open. Take those pages when the index switches to the component
+     * instead, which is the same on-demand allocation a component already goes through after every flush.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.TEST_GENERATED)
+    @Test
+    public void testAllocateTakesPagesForTheCurrentMemoryComponentOnly() throws Exception {
+        OrderedIndexTestContext ctx = createTestContext(fieldSerdes, numKeys);
+        ILSMIndex index = (ILSMIndex) ctx.getIndex();
+        index.create();
+        index.activate();
+        try {
+            // there is one virtual buffer cache per memory component here, so each one's usage is that component's
+            index.allocateMemoryComponents();
+            List<IVirtualBufferCache> vbcs = harness.getVirtualBufferCaches();
+            int current = index.getCurrentMemoryComponentIndex();
+            Assert.assertTrue("the current memory component holds no pages", vbcs.get(current).getUsage() > 0);
+            for (int i = 0; i < vbcs.size(); i++) {
+                if (i != current) {
+                    Assert.assertEquals("memory component " + i + " holds pages before the index switched to it", 0,
+                            vbcs.get(i).getUsage());
+                }
+            }
+        } finally {
+            index.deactivate();
+            index.destroy();
+        }
+    }
+
+    /**
+     * The pages a memory component holds are taken when a writer first enters it, not when the index is set up, so
+     * the component the index switches to after a flush must take them on demand. This is the same path a flushed
+     * component already takes, since a flush cleans it up and leaves it unallocated.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.TEST_GENERATED)
+    @Test
+    public void testNextMemoryComponentTakesItsPagesWhenTheIndexSwitchesToIt() throws Exception {
+        OrderedIndexTestContext ctx = createTestContext(fieldSerdes, numKeys);
+        ILSMIndex index = (ILSMIndex) ctx.getIndex();
+        index.create();
+        index.activate();
+        try {
+            List<IVirtualBufferCache> vbcs = harness.getVirtualBufferCaches();
+            testUtils.insertIntTuples(ctx, numTuplesToInsert, harness.getRandom());
+            int first = index.getCurrentMemoryComponentIndex();
+            flush(ctx);
+            int next = index.getCurrentMemoryComponentIndex();
+            Assert.assertNotEquals("the index did not switch memory components", first, next);
+            Assert.assertEquals("memory component " + next + " holds pages before it has been written to", 0,
+                    vbcs.get(next).getUsage());
+            // memoryComponentsAllocated is already true here, so allocateMemoryComponents() is short-circuited and
+            // this write has to be what allocates the component
+            testUtils.insertIntTuples(ctx, numTuplesToInsert, harness.getRandom());
+            Assert.assertTrue("memory component " + next + " took no pages when it was written to",
+                    vbcs.get(next).getUsage() > 0);
+            // checkPointSearches does not fail on a point search that returns nothing, so checkScan carries the
+            // assertion that every tuple written to the lazily allocated component is actually there
+            testUtils.checkPointSearches(ctx);
+            testUtils.checkScan(ctx);
+        } finally {
+            index.deactivate();
+            index.destroy();
+        }
     }
 
     @Test
