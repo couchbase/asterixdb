@@ -36,6 +36,9 @@ import org.apache.hyracks.api.io.FileReference;
 import org.apache.hyracks.api.util.ExceptionUtils;
 import org.apache.hyracks.control.nc.io.IOManager;
 import org.apache.hyracks.util.ExponentialRetryPolicy;
+import org.apache.hyracks.util.annotations.AiProvenance;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.azure.storage.blob.BlobAsyncClient;
 import com.azure.storage.blob.BlobContainerAsyncClient;
@@ -47,7 +50,7 @@ import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
 public class AzureParallelDownloader extends AbstractParallelDownloader {
-    private final IOManager ioManager;
+    private static final Logger LOGGER = LogManager.getLogger();
     private final BlobContainerAsyncClient blobContainerAsyncClient;
     private final IRequestProfilerLimiter profiler;
     private final AzBlobStorageClientConfig config;
@@ -55,7 +58,6 @@ public class AzureParallelDownloader extends AbstractParallelDownloader {
 
     public AzureParallelDownloader(IOManager ioManager, BlobContainerAsyncClient blobContainerAsyncClient,
             IRequestProfilerLimiter profiler, AzBlobStorageClientConfig config) {
-        this.ioManager = ioManager;
         this.blobContainerAsyncClient = blobContainerAsyncClient;
         this.profiler = profiler;
         this.config = config;
@@ -85,7 +87,9 @@ public class AzureParallelDownloader extends AbstractParallelDownloader {
             BlobAsyncClient blobAsyncClient =
                     blobContainerAsyncClient.getBlobAsyncClient(config.getPrefix() + fileReference.getRelativePath());
 
-            Mono<Void> downloadTask = blobAsyncClient.downloadToFile(absPath.toString()).then();
+            // overwrite: a download replaces whatever the local cache holds, and a retry must be able to
+            // replace a partially written file from the previous attempt
+            Mono<Void> downloadTask = blobAsyncClient.downloadToFile(absPath.toString(), true).then();
             downloads.add(downloadTask);
 
             if (maxConcurrent > 0 && downloads.size() >= maxConcurrent) {
@@ -112,7 +116,10 @@ public class AzureParallelDownloader extends AbstractParallelDownloader {
         List<Mono<Void>> directoryDownloads = new ArrayList<>();
 
         for (FileReference directory : directories) {
-            Mono<Void> directoryTask = downloadDirectoryAsync(directory, failedFiles).onErrorResume(e -> Mono.empty()); // Continue even if a directory fails
+            Mono<Void> directoryTask = downloadDirectoryAsync(directory, failedFiles).onErrorResume(e -> {
+                LOGGER.info("Failed to download directory {}", directory, e);
+                return Mono.empty(); // Continue even if a directory fails
+            });
             directoryDownloads.add(directoryTask);
         }
 
@@ -123,17 +130,21 @@ public class AzureParallelDownloader extends AbstractParallelDownloader {
         return failedFiles;
     }
 
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "pass the requested directory down so the blob's local path is resolved against its device; log failures")
     private Mono<Void> downloadDirectoryAsync(FileReference directory, Set<FileReference> failedFiles) {
         return getBlobItems(directory).flatMap(blobItem -> {
             profiler.objectGet();
-            return downloadBlobAsync(blobItem, failedFiles);
-        }, config.getRequestsMaxPendingHttpConnections()).then().doOnError(error -> failedFiles.add(directory)); // Record directory failure
+            return downloadBlobAsync(directory, blobItem, failedFiles);
+        }, config.getRequestsMaxPendingHttpConnections()).then().doOnError(error -> {
+            LOGGER.info("Failed to download blobs under {}", getListPrefix(directory), error);
+            failedFiles.add(directory); // Record directory failure
+        });
     }
 
-    private Mono<Void> downloadBlobAsync(BlobItem blobItem, Set<FileReference> failedFiles) {
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "derive the local path by stripping the configured prefix instead of searching for 'storage'")
+    private Mono<Void> downloadBlobAsync(FileReference directory, BlobItem blobItem, Set<FileReference> failedFiles) {
+        FileReference diskDestFile = toLocalFile(directory, blobItem.getName());
         try {
-            // Resolve destination path
-            FileReference diskDestFile = ioManager.resolve(createDiskSubPath(blobItem.getName()));
             Path absDiskBlobPath = getDiskDestPath(diskDestFile);
             Path parentDiskPath = absDiskBlobPath.getParent();
 
@@ -141,22 +152,22 @@ public class AzureParallelDownloader extends AbstractParallelDownloader {
 
             BlobAsyncClient blobAsyncClient = blobContainerAsyncClient.getBlobAsyncClient(blobItem.getName());
 
-            return blobAsyncClient.downloadToFile(absDiskBlobPath.toString()).doOnError(error -> {
-                FileReference failedFile = ioManager.resolve(blobItem.getName());
-                failedFiles.add(failedFile);
+            // overwrite: a download replaces whatever the local cache holds, and a retry must be able to
+            // replace a partially written file from the previous attempt
+            return blobAsyncClient.downloadToFile(absDiskBlobPath.toString(), true).doOnError(error -> {
+                LOGGER.info("Failed to download blob {} into {}", blobItem.getName(), diskDestFile, error);
+                failedFiles.add(diskDestFile);
             }).then();
         } catch (Exception e) {
-            failedFiles.add(ioManager.resolve(blobItem.getName()));
+            LOGGER.info("Failed to prepare download of blob {} into {}", blobItem.getName(), diskDestFile, e);
+            failedFiles.add(diskDestFile);
             return Mono.error(HyracksDataException.create(e));
         }
     }
 
-    private String createDiskSubPath(String blobName) {
-        int idx = blobName.indexOf(STORAGE_SUB_DIR);
-        if (idx >= 0) {
-            return blobName.substring(idx);
-        }
-        return blobName;
+    @Override
+    protected String getPrefix() {
+        return config.getPrefix();
     }
 
     private void createDirectories(Path parentPath) throws HyracksDataException {
@@ -178,9 +189,12 @@ public class AzureParallelDownloader extends AbstractParallelDownloader {
     }
 
     private Flux<BlobItem> getBlobItems(FileReference directoryToDownload) {
-        ListBlobsOptions listBlobsOptions =
-                new ListBlobsOptions().setPrefix(config.getPrefix() + directoryToDownload.getRelativePath());
+        ListBlobsOptions listBlobsOptions = new ListBlobsOptions().setPrefix(getListPrefix(directoryToDownload));
         return blobContainerAsyncClient.listBlobs(listBlobsOptions);
+    }
+
+    private String getListPrefix(FileReference directoryToDownload) {
+        return config.getPrefix() + directoryToDownload.getRelativePath();
     }
 
     @Override

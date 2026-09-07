@@ -285,6 +285,11 @@
                 <argument>${project.build.directory}${file.separator}..${file.separator}src${file.separator}test${file.separator}resources${file.separator}TweetSent</argument>
                 <argument>--prefer-binary</argument>
                 <argument>scikit-learn</argument>
+                <!-- msgpack travels with the library so entrypoint.py can import it from
+                     contents/site-packages. The cloud deploy path does not extract the bundled
+                     msgpack into contents/ipc the way the on-prem shiv() path does, so relying on
+                     that copy leaves every cloud-mode Python UDF test unable to start. -->
+                <argument>msgpack</argument>
               </arguments>
               <environmentVariables>
                 <VIRTUALENV>${project.build.directory}</VIRTUALENV>
@@ -553,7 +558,7 @@
           **/CloudStorageTest.java,**/CloudStorageSparseTest,**/CloudStorageCancellationTest.java,**/CloudStorageGCSTest.java,**/CloudStorageUnstableTest.java,
           **/SqlppExecutionWithCancellationTest.java,**/DmlTest.java,**/RepeatedTest.java,**/SqlppExecutionTest.java,
           **/SqlppExecutionColumnTest.java,**/*StaticPartitioning*Test.java,**/*Ssl*Test.java,**/Podman*.java,
-          **/*AnalyzedExecutionTest.java,**/SqlppProfiledExecutionTest.java,**/CloudPythonTest.java,
+          **/*AnalyzedExecutionTest.java,**/SqlppProfiledExecutionTest.java,**/CloudPython*Test.java,
           **/CloudStorageAzTest.java,**/AzureBlobStorageExternalDatasetTest.java,**/GCSCloudStorageUnstableTest,
           **/AzureBlobStorageExternalDatasetOnePartitionTest.java,**/SqlppSinglePointLookupExecutionTest.java,
           **/Atomic*.java, **/AwsS3*.java, **/*SqlppHdfs*.java, **/*RQGTest.java, **/*RQJTest.java
@@ -564,9 +569,11 @@
     <profile>
       <id>asterix-gerrit-asterix-app-sql-execution</id>
       <properties>
-        <test.includes>**/SqlppProfiledExecutionTest.java,**/SqlppExecutionTest.java</test.includes>
+        <test.includes>
+          **/SqlppProfiledExecutionTest.java,**/SqlppExecutionTest.java,**/CloudPython*Test.java
+        </test.includes>
         <itest.includes>
-          **/SqlppExecution*IT.java,**/ExternalPythonFunctionIT.java,**/CloudPythonTest.java
+          **/SqlppExecution*IT.java,**/ExternalPythonFunctionIT.java
         </itest.includes>
         <failIfNoTests>false</failIfNoTests>
       </properties>

@@ -31,6 +31,7 @@ import org.apache.hyracks.api.util.ExceptionUtils;
 import org.apache.hyracks.cloud.util.CloudRetryableRequestUtil;
 import org.apache.hyracks.util.ExponentialRetryPolicy;
 import org.apache.hyracks.util.IRetryPolicy;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -81,4 +82,23 @@ public abstract class AbstractParallelDownloader implements IParallelDownloader 
 
     protected abstract Set<FileReference> downloadDirectories(Collection<FileReference> toDownload)
             throws ExecutionException, InterruptedException, IOException;
+
+    /**
+     * The configured object store prefix. Every object key is this prefix followed by the file's
+     * device-relative path, since that is how {@code AbstractCloudIOManager#open} names what it writes.
+     */
+    protected abstract String getPrefix();
+
+    /**
+     * Maps an object key onto its local file, on the same IO device as the directory the download was
+     * requested for. Only the configured prefix is stripped; the rest of the key is the device-relative
+     * path verbatim. The device cannot be taken from the key: object storage is a flat, cluster-wide
+     * namespace that deliberately does not record which local device a node keeps a file on.
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.GENERATED, notes = "one definition of the key-to-path mapping, shared by every backend's downloader")
+    protected final FileReference toLocalFile(FileReference directory, String objectKey) {
+        String prefix = getPrefix();
+        String relativePath = objectKey.startsWith(prefix) ? objectKey.substring(prefix.length()) : objectKey;
+        return new FileReference(directory.getDeviceHandle(), relativePath);
+    }
 }

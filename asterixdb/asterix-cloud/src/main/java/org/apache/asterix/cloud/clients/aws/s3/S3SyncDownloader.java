@@ -54,7 +54,6 @@ public class S3SyncDownloader extends AbstractParallelDownloader {
     private static final Logger LOGGER = LogManager.getLogger();
 
     private final String bucket;
-    private final IOManager ioManager;
     private final S3Client s3Client;
     private final S3ClientConfig config;
     private final IRequestProfilerLimiter profiler;
@@ -62,7 +61,6 @@ public class S3SyncDownloader extends AbstractParallelDownloader {
 
     S3SyncDownloader(String bucket, IOManager ioManager, S3ClientConfig config, IRequestProfilerLimiter profiler) {
         this.bucket = bucket;
-        this.ioManager = ioManager;
         this.config = config;
         this.profiler = profiler;
         this.s3Client = (S3Client) S3CloudClient.buildClient(config).getConsumingClient();
@@ -139,18 +137,17 @@ public class S3SyncDownloader extends AbstractParallelDownloader {
         List<Future<?>> downloads = new ArrayList<>();
 
         int maxPending = config.getRequestsMaxPendingHttpConnections();
-        List<S3Object> downloadObjects = new ArrayList<>();
+        List<FileReference> downloadTargets = new ArrayList<>();
         for (FileReference fileReference : toDownload) {
             profiler.objectMultipartDownload();
             String prefix = config.getPrefix() + fileReference.getRelativePath();
             List<S3Object> objects = S3ClientUtils.listS3Objects(s3Client, bucket, prefix);
-            downloadObjects.addAll(objects);
+            for (S3Object s3Object : objects) {
+                downloadTargets.add(toLocalFile(fileReference, s3Object.key()));
+            }
         }
 
-        for (S3Object s3Object : downloadObjects) {
-            String key = createDiskSubPath(s3Object.key());
-            FileReference targetFile = ioManager.resolve(key);
-
+        for (FileReference targetFile : downloadTargets) {
             FileUtils.createParentDirectories(targetFile.getFile());
 
             Future<Void> future = executorService.submit(() -> {
@@ -160,8 +157,7 @@ public class S3SyncDownloader extends AbstractParallelDownloader {
                 } catch (IOException e) {
                     // Record failed file
                     failedFiles.add(targetFile);
-                    LOGGER.debug("Failed to download file using sync client: file {} having s3Key: {}", targetFile,
-                            s3Object.key(), e);
+                    LOGGER.info("Failed to download file using sync client: {}", targetFile, e);
                 }
                 return null;
             });
@@ -187,11 +183,9 @@ public class S3SyncDownloader extends AbstractParallelDownloader {
         }
     }
 
-    private String createDiskSubPath(String objectName) {
-        if (!objectName.startsWith(STORAGE_SUB_DIR)) {
-            objectName = objectName.substring(objectName.indexOf(STORAGE_SUB_DIR));
-        }
-        return objectName;
+    @Override
+    protected String getPrefix() {
+        return config.getPrefix();
     }
 
     @Override

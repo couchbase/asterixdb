@@ -135,6 +135,11 @@ public class GCSParallelDownloader extends AbstractParallelDownloader {
     }
 
     @Override
+    protected String getPrefix() {
+        return config.getPrefix();
+    }
+
+    @Override
     public void close() throws HyracksDataException {
         InvokeUtil.tryWithCleanupsAsHyracks(transferManager::close, gcsClient::close);
     }

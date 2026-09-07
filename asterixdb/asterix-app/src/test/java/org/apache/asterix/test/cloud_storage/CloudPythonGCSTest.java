@@ -18,25 +18,22 @@
  */
 package org.apache.asterix.test.cloud_storage;
 
-import static org.apache.asterix.api.common.LocalCloudUtilAdobeMock.fillConfigTemplate;
-import static org.apache.asterix.test.cloud_storage.CloudStorageTest.MOCK_SERVER_HOSTNAME_FRAGMENT;
+import static org.apache.asterix.api.common.LocalCloudUtil.CLOUD_STORAGE_BUCKET;
+import static org.apache.asterix.api.common.LocalCloudUtil.MOCK_SERVER_REGION;
 import static org.apache.asterix.test.runtime.ExternalPythonFunctionIT.setNcEndpoints;
 import static org.apache.hyracks.util.file.FileUtil.joinPath;
 
 import java.util.Collection;
 import java.util.List;
 
-import org.apache.asterix.api.common.LocalCloudUtilAdobeMock;
 import org.apache.asterix.app.external.CloudUDFLibrarian;
 import org.apache.asterix.common.config.GlobalConfig;
-import org.apache.asterix.test.common.TestConstants;
 import org.apache.asterix.test.common.TestExecutor;
 import org.apache.asterix.test.runtime.LangExecutionUtil;
 import org.apache.asterix.testframework.context.TestCaseContext;
 import org.apache.asterix.testframework.xml.Description;
 import org.apache.asterix.testframework.xml.TestCase;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.junit.AfterClass;
 import org.junit.Assume;
 import org.junit.BeforeClass;
@@ -47,52 +44,65 @@ import org.junit.runners.MethodSorters;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
-import com.adobe.testing.s3mock.testcontainers.S3MockContainer;
+import com.google.cloud.NoCredentials;
+import com.google.cloud.storage.Blob;
+import com.google.cloud.storage.BucketInfo;
+import com.google.cloud.storage.Storage;
+import com.google.cloud.storage.StorageClass;
+import com.google.cloud.storage.StorageOptions;
 
 /**
- * Run Python UDF tests in cloud deployment environment
+ * Run Python UDF tests in cloud deployment environment backed by Google Cloud Storage. This is the {@code gs}
+ * counterpart of {@link CloudPythonS3Test} and {@link CloudPythonAzureTest}, running the same suite against the
+ * fake-gcs-server started by the {@code gcs-tests} Maven profile.
+ * <p>
+ * This uses its own config rather than {@code cc-cloud-storage-gcs.conf}, which registers
+ * {@code UnstableStatementExecutorExtension} for {@link GCSCloudStorageUnstableTest} -- injected statement
+ * failures would make UDF deployment results meaningless here.
  */
 @RunWith(Parameterized.class)
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
-public class CloudPythonTest {
-
-    private static final Logger LOGGER = LogManager.getLogger();
+@AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.TEST_GENERATED, notes = "gs counterpart of CloudPythonS3Test; Python UDFs had no object-storage coverage outside S3")
+public class CloudPythonGCSTest {
 
     private final TestCaseContext tcCtx;
     private static final String SUITE_TESTS = "testsuite_it_python.xml";
     private static final String ONLY_TESTS = "testsuite_cloud_storage_only.xml";
     private static final String DELTA_RESULT_PATH = "results_cloud";
-    public static final String CONFIG_FILE_TEMPLATE = "src/test/resources/cc-cloud-storage.conf.ftl";
-    public static final String CONFIG_FILE = "target/cc-cloud-storage.conf";
+    private static final String CONFIG_FILE_NAME = "src/test/resources/cc-cloud-storage-gcs-python.conf";
     private static final String EXCLUDED_TESTS = "MP";
-    private static final String dsPath = joinPath("/", "tmp", "asterixdb_udf", "asterix_nc1_udf.sock");
+    private static final String dsPath =
+            joinPath(System.getProperty("java.io.tmpdir"), "asterixdb_udf", "asterix_nc1_udf.sock");
 
-    public CloudPythonTest(TestCaseContext tcCtx) {
+    public static final String MOCK_SERVER_HOSTNAME = "http://127.0.0.1:24443";
+    private static final String MOCK_SERVER_PROJECT_ID = "asterixdb-gcs-test-project-id";
+
+    public CloudPythonGCSTest(TestCaseContext tcCtx) {
         this.tcCtx = tcCtx;
     }
 
     @BeforeClass
     public static void setUp() throws Exception {
-        S3MockContainer s3Mock = LocalCloudUtilAdobeMock.startS3CloudEnvironment(true);
-        fillConfigTemplate(MOCK_SERVER_HOSTNAME_FRAGMENT + s3Mock.getHttpServerPort(), CONFIG_FILE_TEMPLATE,
-                CONFIG_FILE);
-        System.setProperty(TestConstants.S3_SERVICE_ENDPOINT_KEY,
-                MOCK_SERVER_HOSTNAME_FRAGMENT + s3Mock.getHttpServerPort());
+        Storage storage = StorageOptions.newBuilder().setHost(MOCK_SERVER_HOSTNAME)
+                .setCredentials(NoCredentials.getInstance()).setProjectId(MOCK_SERVER_PROJECT_ID).build().getService();
+        cleanup(storage);
+        initialize(storage);
+        storage.close();
+
         TestExecutor testExecutor = new TestExecutor(DELTA_RESULT_PATH);
         testExecutor.executorId = "cloud";
         testExecutor.stripSubstring = "//DB:";
-        LangExecutionUtil.setUp(CONFIG_FILE, testExecutor, false, false, new CloudUDFLibrarian(dsPath));
+        LangExecutionUtil.setUp(CONFIG_FILE_NAME, testExecutor, false, false, new CloudUDFLibrarian(dsPath));
         setNcEndpoints(testExecutor);
-        System.setProperty(GlobalConfig.CONFIG_FILE_PROPERTY, CONFIG_FILE);
+        System.setProperty(GlobalConfig.CONFIG_FILE_PROPERTY, CONFIG_FILE_NAME);
     }
 
     @AfterClass
     public static void tearDown() throws Exception {
         LangExecutionUtil.tearDown();
-        LocalCloudUtilAdobeMock.shutdownSilently();
     }
 
-    @Parameters(name = "CloudPythonTest {index}: {0}")
+    @Parameters(name = "CloudPythonGCSTest {index}: {0}")
     public static Collection<Object[]> tests() throws Exception {
         return LangExecutionUtil.tests(ONLY_TESTS, SUITE_TESTS);
     }
@@ -106,5 +116,20 @@ public class CloudPythonTest {
 
     private static String getText(Description description) {
         return description == null ? "" : description.getValue();
+    }
+
+    private static void cleanup(Storage storage) {
+        try {
+            Iterable<Blob> blobs = storage.list(CLOUD_STORAGE_BUCKET).iterateAll();
+            blobs.forEach(Blob::delete);
+            storage.delete(CLOUD_STORAGE_BUCKET);
+        } catch (Exception ex) {
+            // ignore
+        }
+    }
+
+    private static void initialize(Storage storage) {
+        storage.create(BucketInfo.newBuilder(CLOUD_STORAGE_BUCKET).setStorageClass(StorageClass.STANDARD)
+                .setLocation(MOCK_SERVER_REGION).build());
     }
 }

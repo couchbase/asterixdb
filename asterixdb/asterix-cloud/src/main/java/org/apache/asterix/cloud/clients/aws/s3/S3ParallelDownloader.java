@@ -103,6 +103,11 @@ class S3ParallelDownloader extends AbstractParallelDownloader {
     }
 
     @Override
+    protected String getPrefix() {
+        return config.getPrefix();
+    }
+
+    @Override
     public void close() {
         transferManager.close();
         s3AsyncClient.close();
