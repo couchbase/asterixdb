@@ -19,6 +19,7 @@
 package org.apache.hyracks.storage.am.lsm.vector.dataflow;
 
 import java.util.Map;
+import java.util.Objects;
 
 import org.apache.hyracks.api.dataflow.value.IBinaryComparatorFactory;
 import org.apache.hyracks.api.dataflow.value.ITypeTraits;
@@ -77,7 +78,7 @@ public class LSMVTreeLocalResourceFactory extends LsmResourceFactory {
         this.vectorFields = vectorFields;
         this.atomic = atomic;
         this.distanceFunctionFactory = distanceFunctionFactory;
-        this.crossPollination = crossPollination != null ? crossPollination : CrossPollinationConfig.LEGACY;
+        this.crossPollination = Objects.requireNonNull(crossPollination, "crossPollination");
         this.vectorAccessorFactory = vectorAccessorFactory;
         this.numPrimaryKeyFields = numPrimaryKeyFields;
         this.numIncludeFields = numIncludeFields;

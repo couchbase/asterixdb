@@ -20,6 +20,7 @@ package org.apache.hyracks.storage.am.lsm.vector.dataflow;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.apache.hyracks.api.application.INCServiceContext;
 import org.apache.hyracks.api.dataflow.value.IBinaryComparatorFactory;
@@ -52,6 +53,7 @@ import org.apache.hyracks.storage.am.vector.impls.VTreeDataTupleBuilderFactory;
 import org.apache.hyracks.storage.am.vector.utils.CrossPollinationConfig;
 import org.apache.hyracks.storage.common.IIndex;
 import org.apache.hyracks.storage.common.IStorageManager;
+import org.apache.hyracks.util.annotations.AiProvenance;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -95,9 +97,9 @@ public class LSMVTreeLocalResource extends LsmResource implements IQuantizedReso
     protected final IVTreeDistanceFunctionFactory distanceFunctionFactory;
 
     /**
-     * Cross-pollination placement config supplied at DDL time. Persisted to JSON so that incremental
-     * insert/delete on a restarted index replicate into the same leaf clusters bulk-load used (M=1 =
-     * legacy single-closest).
+     * Cross-pollination placement config supplied at DDL time; never {@code null}. All three values are
+     * persisted to JSON — at every {@code M}, not only when replication is on — so that incremental
+     * insert/delete on a restarted index resolve the same leaf clusters bulk-load used.
      */
     protected final CrossPollinationConfig crossPollination;
 
@@ -132,7 +134,7 @@ public class LSMVTreeLocalResource extends LsmResource implements IQuantizedReso
         this.filterFields = filterFields;
         this.atomic = atomic;
         this.distanceFunctionFactory = distanceFunctionFactory;
-        this.crossPollination = crossPollination != null ? crossPollination : CrossPollinationConfig.LEGACY;
+        this.crossPollination = Objects.requireNonNull(crossPollination, "crossPollination");
         this.confidenceInterval = confidenceInterval;
         this.minQuantile = minQuantile;
         this.maxQuantile = maxQuantile;
@@ -158,7 +160,7 @@ public class LSMVTreeLocalResource extends LsmResource implements IQuantizedReso
         this.filterFields = filterFields;
         this.atomic = atomic;
         this.distanceFunctionFactory = distanceFunctionFactory;
-        this.crossPollination = crossPollination != null ? crossPollination : CrossPollinationConfig.LEGACY;
+        this.crossPollination = Objects.requireNonNull(crossPollination, "crossPollination");
         this.confidenceInterval = confidenceInterval;
         this.minQuantile = minQuantile;
         this.maxQuantile = maxQuantile;
@@ -224,6 +226,8 @@ public class LSMVTreeLocalResource extends LsmResource implements IQuantizedReso
     }
 
     @Override
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "Persist the cross-pollination params at every M, so a restarted NC reconstructs the "
+            + "window the index was bulk-loaded with")
     protected void appendToJson(final ObjectNode json, IPersistedResourceRegistry registry)
             throws HyracksDataException {
         super.appendToJson(json, registry);
@@ -231,12 +235,13 @@ public class LSMVTreeLocalResource extends LsmResource implements IQuantizedReso
         json.putPOJO("vectorFields", vectorFields);
         json.putPOJO("filterFields", filterFields);
         json.put("atomic", atomic);
-        // Cross-pollination placement params — only when active (M>1); absence reads back as legacy M=1.
-        if (crossPollination != null && crossPollination.enabled()) {
-            json.put(KEY_CROSS_POLLINATION_M, crossPollination.m());
-            json.put(KEY_RNG_FACTOR, crossPollination.rngFactor());
-            json.put(KEY_EPSILON, crossPollination.epsilon());
-        }
+        // Cross-pollination placement params — always persisted, including at M == 1, and read back with
+        // no default (see fromJson). epsilon prunes the level-wise descent at every M, so writing these
+        // only when replication was on left a restarted NC reconstructing the index with a different
+        // window than it was bulk-loaded with, which leaks deletes.
+        json.put(KEY_CROSS_POLLINATION_M, crossPollination.m());
+        json.put(KEY_RNG_FACTOR, crossPollination.rngFactor());
+        json.put(KEY_EPSILON, crossPollination.epsilon());
         // Vector accessor factory — round-tripped via IPersistedResourceRegistry. The factory
         // implementation (AOrderedListVectorBinaryAccessorFactory) must be registered with the
         // registry; see PersistedResourceRegistry#registerClasses.
@@ -259,6 +264,8 @@ public class LSMVTreeLocalResource extends LsmResource implements IQuantizedReso
         json.put("numIncludeFields", numIncludeFields);
     }
 
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "Fall back to CrossPollinationConfig's shared placement defaults rather than local "
+            + "literals that can disagree with the WITH-clause defaults")
     public static IJsonSerializable fromJson(IPersistedResourceRegistry registry, JsonNode json)
             throws HyracksDataException {
         // appendToJson always writes vectorDimensions, so its absence (or a non-positive value) means the
@@ -300,14 +307,19 @@ public class LSMVTreeLocalResource extends LsmResource implements IQuantizedReso
         IVTreeDataTupleBuilderFactory dataTupleBuilderFactory =
                 new VTreeDataTupleBuilderFactory(numIncludeFields, isQuantized);
 
-        // Cross-pollination params — back-compat: absent (or M<=1) reads back as legacy single-closest.
-        CrossPollinationConfig crossPollination = CrossPollinationConfig.LEGACY;
-        if (json.has(KEY_CROSS_POLLINATION_M)) {
-            int m = json.get(KEY_CROSS_POLLINATION_M).asInt(1);
-            double rngFactor = json.has(KEY_RNG_FACTOR) ? json.get(KEY_RNG_FACTOR).asDouble(1.0) : 1.0;
-            double epsilon = json.has(KEY_EPSILON) ? json.get(KEY_EPSILON).asDouble(0.3) : 0.3;
-            crossPollination = new CrossPollinationConfig(m, rngFactor, epsilon);
+        // Cross-pollination params. appendToJson writes all three unconditionally, so their absence means
+        // the resource is corrupt or foreign — fail fast, exactly as vectorDimensions and the two factories
+        // above do. Substituting a default here would make this a second source of truth for a value that
+        // must agree with what bulk-load placed the records by, and the delete path would silently resolve
+        // a different leaf cluster than the matter it has to cancel.
+        if (!json.has(KEY_CROSS_POLLINATION_M) || !json.has(KEY_RNG_FACTOR) || !json.has(KEY_EPSILON)) {
+            throw HyracksDataException.create(ErrorCode.ILLEGAL_STATE,
+                    "LSMVTreeLocalResource is missing its cross-pollination placement parameters ("
+                            + KEY_CROSS_POLLINATION_M + ", " + KEY_RNG_FACTOR + ", " + KEY_EPSILON
+                            + "); resource is corrupt");
         }
+        CrossPollinationConfig crossPollination = new CrossPollinationConfig(json.get(KEY_CROSS_POLLINATION_M).asInt(),
+                json.get(KEY_RNG_FACTOR).asDouble(), json.get(KEY_EPSILON).asDouble());
 
         return new LSMVTreeLocalResource(registry, json, vectorDimensions, vectorFields, filterFields, atomic,
                 confidenceInterval, minQuantile, maxQuantile, alpha, bits, sampleCount, vectorAccessorFactory,

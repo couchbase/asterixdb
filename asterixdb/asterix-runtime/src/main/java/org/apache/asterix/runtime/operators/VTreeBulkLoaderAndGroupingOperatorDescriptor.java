@@ -72,6 +72,7 @@ import org.apache.hyracks.storage.common.IIndex;
 import org.apache.hyracks.storage.common.IIndexAccessor;
 import org.apache.hyracks.storage.common.IResource;
 import org.apache.hyracks.storage.common.LocalResource;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -103,7 +104,7 @@ public class VTreeBulkLoaderAndGroupingOperatorDescriptor extends AbstractSingle
 
     /**
      * Cross-pollination factor: each record is written into the M closest accepted leaf centroids at
-     * bulk-load (M=1 = legacy single-closest). From the index WITH clause (cross_pollination_m).
+     * bulk-load (M=1 = single-closest). From the index WITH clause (cross_pollination_m).
      */
     private final int crossPollinationM;
 
@@ -144,6 +145,8 @@ public class VTreeBulkLoaderAndGroupingOperatorDescriptor extends AbstractSingle
         return distanceFunction::apply;
     }
 
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "Honour a DDL epsilon of 0 instead of coercing it, so bulk-load placement matches the "
+            + "insert/delete path")
     public VTreeBulkLoaderAndGroupingOperatorDescriptor(IOperatorDescriptorRegistry spec,
             IIndexDataflowHelperFactory indexHelperFactory, RecordDescriptor inputRecordDescriptor,
             RecordDescriptor outputRecordDescriptor, IScalarEvaluatorFactory args, String distanceMetric,
@@ -160,8 +163,22 @@ public class VTreeBulkLoaderAndGroupingOperatorDescriptor extends AbstractSingle
         this.numIncludeFields = numIncludeFields;
         this.isQuantized = isQuantized;
         this.partitionsMap = partitionsMap;
-        this.levelwiseEpsilon = levelwiseEpsilon > 0.0 && Double.isFinite(levelwiseEpsilon) ? levelwiseEpsilon : 0.3;
-        this.crossPollinationM = Math.max(1, crossPollinationM);
+        // Take the DDL epsilon exactly as given, with no substitution. 0 is a legal value —
+        // VectorIndexDeclUtil accepts [0,1] — and means "greedy descent": prune to the closest child at
+        // each level, then keep every candidate collected. Coercing it to a non-zero default made
+        // bulk-load gather a wider candidate set than the insert/delete path, which places records by the
+        // epsilon carried on the resource, and any placement mismatch between those two paths leaks
+        // deletes. An out-of-range value is a wiring bug rather than something to paper over, so both
+        // placement parameters are rejected on the same terms CrossPollinationConfig applies them: the
+        // two paths must agree, so neither may quietly correct what it was handed.
+        if (!(levelwiseEpsilon >= 0.0) || !Double.isFinite(levelwiseEpsilon)) {
+            throw new IllegalArgumentException("levelwiseEpsilon must be finite and >= 0, got " + levelwiseEpsilon);
+        }
+        if (crossPollinationM < 1) {
+            throw new IllegalArgumentException("crossPollinationM must be >= 1, got " + crossPollinationM);
+        }
+        this.levelwiseEpsilon = levelwiseEpsilon;
+        this.crossPollinationM = crossPollinationM;
         this.rngFactor = rngFactor;
 
         // Set output record descriptor in the parent class array

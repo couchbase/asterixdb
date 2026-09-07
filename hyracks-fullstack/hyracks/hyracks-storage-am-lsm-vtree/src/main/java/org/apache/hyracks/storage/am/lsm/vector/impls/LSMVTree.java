@@ -22,6 +22,7 @@ package org.apache.hyracks.storage.am.lsm.vector.impls;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.apache.hyracks.api.dataflow.value.IBinaryComparatorFactory;
 import org.apache.hyracks.api.exceptions.ErrorCode;
@@ -161,7 +162,7 @@ public class LSMVTree extends AbstractLSMIndex implements ITreeIndex {
         this.dataTupleBuilderFactory = dataTupleBuilderFactory;
         this.quantizationParams = quantizationParams;
         this.distanceFunctionFactory = distanceFunctionFactory;
-        this.crossPollination = crossPollination != null ? crossPollination : CrossPollinationConfig.LEGACY;
+        this.crossPollination = Objects.requireNonNull(crossPollination, "crossPollination");
 
         int i = 0;
         for (IVirtualBufferCache virtualBufferCache : virtualBufferCaches) {

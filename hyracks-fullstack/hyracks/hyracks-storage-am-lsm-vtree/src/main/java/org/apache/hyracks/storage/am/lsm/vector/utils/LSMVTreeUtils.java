@@ -112,28 +112,12 @@ public final class LSMVTreeUtils {
      *                           {@code IVTreeQuantizerFactory#createQuantizer}) or {@code null} for
      *                           the non-quantized test-fixture path; controls whether the leaf
      *                           frame uses the 4-field quantized layout or the 3-field bare layout.
+     * @param crossPollination   placement config from the index DDL; must not be {@code null}. There is
+     *                           deliberately no convenience overload that supplies a default: the value
+     *                           has to be the one bulk-load placed the records by, and a default here
+     *                           would be a second source of truth for it. Callers that do not care
+     *                           about replication pass an explicit single-closest config.
      */
-    public static LSMVTree createLSMTree(NCConfig storageConfig, IIOManager ioManager,
-            List<IVirtualBufferCache> virtualBufferCaches, FileReference file, IBufferCache diskBufferCache,
-            ITypeTraits[] typeTraits, IBinaryComparatorFactory[] cmpFactories, double bloomFilterFalsePositiveRate,
-            ILSMMergePolicy mergePolicy, ILSMOperationTracker opTracker, ILSMIOOperationScheduler ioScheduler,
-            ILSMIOOperationCallbackFactory ioOpCallbackFactory, ILSMPageWriteCallbackFactory pageWriteCallbackFactory,
-            int vectorDimensions, int[] vectorFields, int[] filterFields,
-            ILSMComponentFilterFrameFactory filterFrameFactory, LSMComponentFilterManager filterManager,
-            IComponentFilterHelper filterHelper, boolean durable,
-            IMetadataPageManagerFactory metadataPageManagerFactory, boolean atomic, RecordDescriptor inputRecDesc,
-            IVTreeBinaryAccessorFactory vectorAccessorFactory, int numPrimaryKeyFields, int numIncludeFields,
-            IVTreeDataTupleBuilderFactory dataTupleBuilderFactory, VTreeQuantizationParams quantizationParams,
-            IVTreeDistanceFunctionFactory distanceFunctionFactory) throws HyracksDataException {
-        // Legacy single-closest placement; production overload below threads the real config.
-        return createLSMTree(storageConfig, ioManager, virtualBufferCaches, file, diskBufferCache, typeTraits,
-                cmpFactories, bloomFilterFalsePositiveRate, mergePolicy, opTracker, ioScheduler, ioOpCallbackFactory,
-                pageWriteCallbackFactory, vectorDimensions, vectorFields, filterFields, filterFrameFactory,
-                filterManager, filterHelper, durable, metadataPageManagerFactory, atomic, inputRecDesc,
-                vectorAccessorFactory, numPrimaryKeyFields, numIncludeFields, dataTupleBuilderFactory,
-                quantizationParams, distanceFunctionFactory, CrossPollinationConfig.LEGACY);
-    }
-
     public static LSMVTree createLSMTree(NCConfig storageConfig, IIOManager ioManager,
             List<IVirtualBufferCache> virtualBufferCaches, FileReference file, IBufferCache diskBufferCache,
             ITypeTraits[] typeTraits, IBinaryComparatorFactory[] cmpFactories, double bloomFilterFalsePositiveRate,

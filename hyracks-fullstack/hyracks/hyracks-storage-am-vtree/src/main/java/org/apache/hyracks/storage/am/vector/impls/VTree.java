@@ -24,6 +24,7 @@ import static org.apache.hyracks.storage.common.buffercache.context.read.Default
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import org.apache.hyracks.api.dataflow.value.IBinaryComparatorFactory;
@@ -143,7 +144,7 @@ public class VTree extends AbstractTreeIndex {
         this.quantizationParams = quantizationParams;
         this.distanceFunctionFactory = distanceFunctionFactory;
         this.distanceFunction = distanceFunctionFactory.createDistanceFunction();
-        this.crossPollination = crossPollination != null ? crossPollination : CrossPollinationConfig.LEGACY;
+        this.crossPollination = Objects.requireNonNull(crossPollination, "crossPollination");
     }
 
     /**

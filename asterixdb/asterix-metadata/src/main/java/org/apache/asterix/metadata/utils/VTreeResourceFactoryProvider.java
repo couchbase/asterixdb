@@ -73,6 +73,8 @@ public class VTreeResourceFactoryProvider implements IResourceFactoryProvider {
 
     @Override
     @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "Propagate the dataset's atomicity to the VTree resource")
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_UI, contributionKind = AiProvenance.ContributionKind.ASSISTED, notes = "Read the cross-pollination params at every M instead of only M > 1, so bulk-load and "
+            + "incremental DML resolve clusters with the same epsilon and deletes cancel their matter")
     public IResourceFactory getResourceFactory(MetadataProvider mdProvider, Dataset dataset, Index index,
             ARecordType recordType, ARecordType metaType, ILSMMergePolicyFactory mergePolicyFactory,
             Map<String, String> mergePolicyProperties, ITypeTraits[] filterTypeTraits,
@@ -151,12 +153,19 @@ public class VTreeResourceFactoryProvider implements IResourceFactoryProvider {
             // the bulk-load job uses in SecondaryVectorOperationsHelper#buildLoadingJobSpec, so incremental
             // insert/delete resolve the identical M leaf clusters per record. Drift here would let a delete
             // miss replicas (leaked deletes) — keep these three reads in lock-step with the bulk-load helper.
-            CrossPollinationConfig crossPollination = CrossPollinationConfig.LEGACY;
-            int crossPollinationM = vectorParameters.getCrossPollinationM();
-            if (crossPollinationM > 1) {
-                crossPollination = new CrossPollinationConfig(crossPollinationM, vectorParameters.getRngFactor(),
-                        vectorParameters.getEpsilon());
-            }
+            //
+            // All three are read unconditionally, at every M. This used to be gated on M > 1, falling back
+            // to a shared default config otherwise — exactly the drift this comment warns about, because
+            // epsilon prunes the level-wise descent at every M (VTree#findReplicaClusters runs the same
+            // navigation for M == 1, it does not shortcut) and that default's epsilon differed from the
+            // DDL's. An index created with the default M == 1 was therefore bulk-loaded with one window and
+            // had its deletes resolved with another, letting antimatter land in a different leaf cluster
+            // than the matter it had to cancel. CrossPollinationConfig now has no default at all, so the
+            // DDL is the only source; VTree#findReplicaClusters records the same failure from its earlier
+            // cause.
+            CrossPollinationConfig crossPollination =
+                    new CrossPollinationConfig(vectorParameters.getCrossPollinationM(), vectorParameters.getRngFactor(),
+                            vectorParameters.getEpsilon());
 
             // Create vector accessor factory for extracting vectors from ADM ordered lists
             AOrderedListVectorBinaryAccessorFactory vectorAccessorFactory =

@@ -53,6 +53,7 @@ import org.apache.hyracks.storage.am.vector.TestVTreeDistanceFunctionFactory;
 import org.apache.hyracks.storage.am.vector.api.IVTreeDataTupleBuilderFactory;
 import org.apache.hyracks.storage.am.vector.api.VTreeQuantizationParams;
 import org.apache.hyracks.storage.am.vector.impls.VTreeDataTupleBuilderFactory;
+import org.apache.hyracks.storage.am.vector.utils.CrossPollinationConfig;
 import org.apache.hyracks.storage.common.buffercache.IBufferCache;
 
 /**
@@ -62,6 +63,13 @@ import org.apache.hyracks.storage.common.buffercache.IBufferCache;
  */
 @SuppressWarnings("rawtypes")
 public final class LSMVTreeTestContext extends AbstractVectorTreeTestContext {
+
+    /**
+     * Placement for the fixtures: one cluster per record, canonical RNG factor, and one candidate window
+     * used by every path. Stated explicitly because {@code CrossPollinationConfig} intentionally has no
+     * default — the value must be the one records were placed by, so it is never implied.
+     */
+    private static final CrossPollinationConfig SINGLE_CLOSEST = new CrossPollinationConfig(1, 1.0, 0.25);
 
     public LSMVTreeTestContext(ISerializerDeserializer[] fieldSerdes, LSMVTree lsmVTree, int vectorDimensions)
             throws HyracksDataException {
@@ -177,7 +185,8 @@ public final class LSMVTreeTestContext extends AbstractVectorTreeTestContext {
                 (RecordDescriptor) null, TestDoubleArrayVectorAccessor.Factory.INSTANCE, // inputRecDesc, vectorAccessorFactory
                 1, numIncludeFields, // numPrimaryKeyFields, numIncludeFields
                 effectiveFactory, (VTreeQuantizationParams) null, // builderFactory, quantizer
-                TestVTreeDistanceFunctionFactory.INSTANCE); // distanceFunctionFactory (test fixture)
+                TestVTreeDistanceFunctionFactory.INSTANCE, // distanceFunctionFactory (test fixture)
+                SINGLE_CLOSEST); // crossPollination
 
         return new LSMVTreeTestContext(fieldSerdes, lsmVTree, numVectorFields);
     }
@@ -217,7 +226,7 @@ public final class LSMVTreeTestContext extends AbstractVectorTreeTestContext {
                 (ILSMComponentFilterFrameFactory) null, (LSMComponentFilterManager) null, (IComponentFilterHelper) null,
                 true, metadataPageManagerFactory, false, (RecordDescriptor) null,
                 TestDoubleArrayVectorAccessor.Factory.INSTANCE, 1, numIncludeFields, effectiveFactory,
-                quantizationParams, TestVTreeDistanceFunctionFactory.INSTANCE);
+                quantizationParams, TestVTreeDistanceFunctionFactory.INSTANCE, SINGLE_CLOSEST);
 
         return new LSMVTreeTestContext(fieldSerdes, lsmVTree, numVectorFields);
     }
