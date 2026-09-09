@@ -116,7 +116,7 @@
     <azurecorehttpnetty.version>1.16.7</azurecorehttpnetty.version>
 
     <!-- keep in sync with hyracks-fullstack/pom.xml -->
-    <google-cloud-storage.version>2.72.0</google-cloud-storage.version>
+    <google-cloud-storage.version>2.73.0</google-cloud-storage.version>
     <hadoop-azuresdk.version>8.6.6</hadoop-azuresdk.version>
     <hadoop-gcs.version>hadoop3-2.2.25</hadoop-gcs.version>
     <io.opencensus.version>0.31.1</io.opencensus.version>
