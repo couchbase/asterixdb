@@ -35,6 +35,8 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-plugin-plugin</artifactId>
+          <!-- @pinned: 3.10+ refuses to compute a goalPrefix for license-automation-plugin,
+               whose artifactId matches neither maven-*-plugin nor *-maven-plugin -->
           <version>3.9.0</version>
         </plugin>
         <!--This plugin's configuration is used to store Eclipse m2e settings only. It has no influence on the Maven build itself.-->
