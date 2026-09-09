@@ -270,10 +270,14 @@ public abstract class AbstractLSMMemoryComponent extends AbstractLSMComponent im
     }
 
     @Override
-    public final void allocate() throws HyracksDataException {
-        boolean allocated = false;
+    public final void register() throws HyracksDataException {
         vbc.open();
         vbc.register(this);
+    }
+
+    @Override
+    public final void allocate() throws HyracksDataException {
+        boolean allocated = false;
         try {
             doAllocate();
             allocated = true;

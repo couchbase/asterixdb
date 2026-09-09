@@ -95,6 +95,19 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 Change-Id: I...
 ```
 
+**Keep downstream detail out of the message body.** This repo's Gerrit and Jira are public, and
+upstream of any extension that consumes it, so a commit body describes only what changed *here*:
+which property moved, which files, what a merge carried. A downstream extension's product names,
+branch-as-product names, issue ids, packaging, licensing and back-compat machinery do not belong
+in it. The `Ext-ref:` footer is the sole place a downstream issue id goes — together with the
+`(<id>)` that an extension's merge tooling appends to each bullet of a generated missing-commits
+list, which is read from that footer and should be left as generated. Where such an id already
+sits inside a subject this repo has published, it is history and stays as it is.
+
+A merge commit's body is that generated bullet list and the trailers, nothing more. Reasoning
+about a downstream extension's side of a coordinated change belongs in that extension's own half
+of it.
+
 Two ways the footer gets destroyed, both of which make the `commit-msg` hook mint a **second**
 `Change-Id` and silently orphan the change:
 
