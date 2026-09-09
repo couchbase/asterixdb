@@ -17,18 +17,19 @@
  * under the License.
  */
 
-DROP dataverse test IF EXISTS;
-CREATE dataverse test;
-USE test;
-
-CREATE TYPE emp_t AS { id: bigint, dept: string, salary: bigint };
-CREATE DATASET emp(emp_t) PRIMARY KEY id;
-
 /*
- * Open (schemaless) dataset: only the primary key is declared, so `v` and `g` have no compile-time
- * type and resolve to ANY. Types with no normalized-key computer (ANY, complex, boolean, duration,
- * interval, spatial) take a different code path inside the spilling sorter than the typed columns
- * exercised by the rest of this suite, so the untyped case needs its own coverage.
+ * Loads the open (schemaless) dataset used by 32-34. 40000 rows, each with an undeclared field `v`
+ * (distinct per row) and an undeclared field `g` (two groups of 20000). Both resolve to ANY at
+ * compile time.
+ *
+ * Sizing: with the test frame size of 32KB, a 512KB budget is 16 frames, and the in-memory table
+ * crosses it at roughly 11500 distinct values. 40000 ungrouped, and 20000 per group, both clear
+ * that comfortably, so every query below is guaranteed to reach the spill path.
  */
-CREATE TYPE emp_open_t AS { id: bigint };
-CREATE DATASET emp_open(emp_open_t) PRIMARY KEY id;
+
+use test;
+
+INSERT INTO emp_open (
+  SELECT VALUE { "id": i, "v": i, "g": i % 2 }
+  FROM range(1, 40000) AS i
+);

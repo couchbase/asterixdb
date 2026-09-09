@@ -359,6 +359,7 @@ public class SqlCountDistinctAggregateHashFunction extends AbstractAggregateFunc
         liveSlots = 0;
     }
 
+    @AiProvenance(agent = Agent.CLAUDE_OPUS_5, tool = Tool.CLAUDE_CODE_UI, contributionKind = ContributionKind.ASSISTED, notes = "Pass a null normalizer array, not an array holding a null factory: NPE on first spill of a column with no normalized-key computer (ANY / complex)")
     private void ensureSpillStructures() throws HyracksDataException {
         if (runsGenerator != null) {
             return;
@@ -367,8 +368,9 @@ public class SqlCountDistinctAggregateHashFunction extends AbstractAggregateFunc
         appender = new FrameTupleAppender();
         tupleBuilder = new ArrayTupleBuilder(1);
         distinctCounter = new DistinctCountingFrameWriter();
-        runsGenerator = new ExternalSortRunGenerator(taskCtx, new int[] { 0 },
-                new INormalizedKeyComputerFactory[] { nkComputerFactory },
+        INormalizedKeyComputerFactory[] keyNormalizerFactories =
+                nkComputerFactory != null ? new INormalizedKeyComputerFactory[] { nkComputerFactory } : null;
+        runsGenerator = new ExternalSortRunGenerator(taskCtx, new int[] { 0 }, keyNormalizerFactories,
                 new IBinaryComparatorFactory[] { comparatorFactory }, valueRecordDesc, Algorithm.MERGE_SORT,
                 EnumFreeSlotPolicy.LAST_FIT, numFrames);
     }

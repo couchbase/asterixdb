@@ -17,18 +17,18 @@
  * under the License.
  */
 
-DROP dataverse test IF EXISTS;
-CREATE dataverse test;
-USE test;
-
-CREATE TYPE emp_t AS { id: bigint, dept: string, salary: bigint };
-CREATE DATASET emp(emp_t) PRIMARY KEY id;
-
 /*
- * Open (schemaless) dataset: only the primary key is declared, so `v` and `g` have no compile-time
- * type and resolve to ANY. Types with no normalized-key computer (ANY, complex, boolean, duration,
- * interval, spatial) take a different code path inside the spilling sorter than the typed columns
- * exercised by the rest of this suite, so the untyped case needs its own coverage.
+ * Grouped variant: every group of an untyped column spills. This also exercises the per-group
+ * reset across the spill path (releaseTable() followed by a fresh init()) for a type with no
+ * normalized-key computer, which hashbased.32 does not reach with its single group.
  */
-CREATE TYPE emp_open_t AS { id: bigint };
-CREATE DATASET emp_open(emp_open_t) PRIMARY KEY id;
+
+use test;
+
+SET `compiler.aggregate.distinct.hash` "true";
+SET `compiler.aggregate.distinct.hash.memory` "512KB";
+
+SELECT g, COUNT(DISTINCT v) AS cnt
+FROM emp_open
+GROUP BY g
+ORDER BY g;

@@ -17,18 +17,15 @@
  * under the License.
  */
 
-DROP dataverse test IF EXISTS;
-CREATE dataverse test;
-USE test;
-
-CREATE TYPE emp_t AS { id: bigint, dept: string, salary: bigint };
-CREATE DATASET emp(emp_t) PRIMARY KEY id;
-
 /*
- * Open (schemaless) dataset: only the primary key is declared, so `v` and `g` have no compile-time
- * type and resolve to ANY. Types with no normalized-key computer (ANY, complex, boolean, duration,
- * interval, spatial) take a different code path inside the spilling sorter than the typed columns
- * exercised by the rest of this suite, so the untyped case needs its own coverage.
+ * Same query as hashbased.32 with the hash rewrite disabled: the sort-based path must agree, which
+ * confirms the spill path does not just avoid crashing but still counts correctly without a
+ * normalized-key fast path.
  */
-CREATE TYPE emp_open_t AS { id: bigint };
-CREATE DATASET emp_open(emp_open_t) PRIMARY KEY id;
+
+use test;
+
+SET `compiler.aggregate.distinct.hash` "false";
+
+SELECT VALUE COUNT(DISTINCT v)
+FROM emp_open;
