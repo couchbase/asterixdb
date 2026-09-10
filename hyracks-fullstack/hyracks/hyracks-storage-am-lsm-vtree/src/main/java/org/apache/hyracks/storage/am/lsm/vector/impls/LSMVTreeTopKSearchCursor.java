@@ -36,6 +36,7 @@ import org.apache.hyracks.dataflow.common.utils.TupleUtils;
 import org.apache.hyracks.storage.am.common.api.ITupleFilter;
 import org.apache.hyracks.storage.am.common.tuples.ReferenceFrameTupleReference;
 import org.apache.hyracks.storage.am.lsm.common.api.ILSMComponent;
+import org.apache.hyracks.storage.am.lsm.common.api.ILSMHarness;
 import org.apache.hyracks.storage.am.lsm.common.api.ILSMIndexOperationContext;
 import org.apache.hyracks.storage.am.lsm.common.api.ILSMTreeTupleReference;
 import org.apache.hyracks.storage.am.lsm.vector.utils.LSMVTreeUtils;
@@ -89,6 +90,9 @@ public class LSMVTreeTopKSearchCursor extends EnforcedIndexCursor implements IVe
     // Operation context
     private ILSMIndexOperationContext opCtx;
     private List<ILSMComponent> operationalComponents;
+    // Harness that entered this cursor's operational components; held so doClose() and doDestroy() can
+    // exit them.
+    private ILSMHarness lsmHarness;
 
     // Per-component accessors and cursors (same as LSMVTreeSearchCursor)
     private VTreeAccessor[] vTreeAccessors;
@@ -173,6 +177,7 @@ public class LSMVTreeTopKSearchCursor extends EnforcedIndexCursor implements IVe
         this.cmp = lsmInitialState.getOriginalKeyComparator();
         this.operationalComponents = lsmInitialState.getOperationalComponents();
         this.numComponents = operationalComponents.size();
+        this.lsmHarness = lsmInitialState.getLSMHarness();
 
         // Extract search parameters from predicate
         VTreeSearchPredicate vectorPred = (VTreeSearchPredicate) searchPred;
@@ -741,34 +746,53 @@ public class LSMVTreeTopKSearchCursor extends EnforcedIndexCursor implements IVe
                     nextCallCount);
         }
 
-        if (rangeCursors != null) {
-            for (int i = 0; i < rangeCursors.length; i++) {
-                if (rangeCursors[i] != null) {
-                    rangeCursors[i].close();
+        try {
+            if (rangeCursors != null) {
+                for (int i = 0; i < rangeCursors.length; i++) {
+                    if (rangeCursors[i] != null) {
+                        rangeCursors[i].close();
+                    }
                 }
             }
+            if (drainIterator != null) {
+                drainIterator.close();
+                drainIterator = null;
+            }
+            if (topKBuffer != null) {
+                topKBuffer.close();
+                topKBuffer = null;
+            }
+        } finally {
+            // In the finally: an exit skipped here leaves a reader on the memory component, which is then
+            // never reset.
+            endSearch();
         }
-        if (drainIterator != null) {
-            drainIterator.close();
-            drainIterator = null;
-        }
-        if (topKBuffer != null) {
-            topKBuffer.close();
-            topKBuffer = null;
+    }
+
+    /**
+     * Exits the operational components that {@link ILSMHarness#search} entered for this cursor. Does nothing
+     * on a cursor that was never opened or whose components have already been exited.
+     */
+    private void endSearch() throws HyracksDataException {
+        if (lsmHarness != null) {
+            lsmHarness.endSearch(opCtx);
         }
     }
 
     @Override
     protected void doDestroy() throws HyracksDataException {
-        // The enforced contract guarantees doClose() already ran (destroy requires the CLOSED state), which
-        // ended the current search. doDestroy() reclaims the per-component accessors + cursors for good,
-        // matching LSMIndexSearchCursor.doDestroy.
-        Throwable failure = CleanupUtils.destroy(null, vTreeAccessors);
-        failure = CleanupUtils.destroy(failure, rangeCursors);
-        vTreeAccessors = null;
-        rangeCursors = null;
-        if (failure != null) {
-            throw HyracksDataException.create(failure);
+        // Reclaims the per-component accessors and cursors. endSearch() also runs here to cover a cursor
+        // destroyed without being opened or closed.
+        try {
+            Throwable failure = CleanupUtils.destroy(null, vTreeAccessors);
+            failure = CleanupUtils.destroy(failure, rangeCursors);
+            vTreeAccessors = null;
+            rangeCursors = null;
+            if (failure != null) {
+                throw HyracksDataException.create(failure);
+            }
+        } finally {
+            endSearch();
         }
     }
 
