@@ -31,6 +31,7 @@ import org.apache.asterix.active.EntityId;
 import org.apache.asterix.active.IActiveEntityEventsListener;
 import org.apache.asterix.active.IActiveNotificationHandler;
 import org.apache.asterix.active.message.ActivePartitionMessage;
+import org.apache.asterix.common.api.IClusterManagementWork.ClusterState;
 import org.apache.asterix.common.exceptions.ErrorCode;
 import org.apache.asterix.common.exceptions.RuntimeDataException;
 import org.apache.asterix.common.utils.AsterixJobProperty;
@@ -44,8 +45,10 @@ import org.apache.hyracks.api.job.JobId;
 import org.apache.hyracks.api.job.JobSpecification;
 import org.apache.hyracks.api.job.JobStatus;
 import org.apache.hyracks.api.job.resource.IJobCapacityController;
+import org.apache.hyracks.api.util.ExceptionUtils;
 import org.apache.hyracks.api.util.SingleThreadEventProcessor;
 import org.apache.hyracks.util.ExitUtil;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -235,8 +238,20 @@ public class ActiveNotificationHandler extends SingleThreadEventProcessor<Active
         }
     }
 
+    /**
+     * Suspends the entity, halting if that fails -- an entity whose suspension failed is in an indeterminate state,
+     * and the DDL that requested the suspension cannot be allowed to proceed against it.
+     * <p>
+     * The exception is a failure caused by this JVM's own termination: the suspend is interrupted along with every
+     * other in-flight task, the listener has already restored its previous state, and nothing is going to run
+     * against the entity afterwards. Halting there buys no safety and forfeits the remainder of an orderly
+     * shutdown, so the failure is reported to the caller instead and the statement fails on its own terms.
+     *
+     * @throws HyracksDataException if the suspend was interrupted by this JVM terminating
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "Report, rather than halt on, a suspend interrupted by an in-progress shutdown")
     public void suspendForDdlOrHalt(IActiveEntityEventsListener listener, MetadataProvider metadataProvider,
-            Dataset targetDataset) {
+            Dataset targetDataset) throws HyracksDataException {
         try {
             EntityId entityId = listener.getEntityId();
             LOGGER.log(level, "Suspending {}", entityId);
@@ -246,6 +261,11 @@ public class ActiveNotificationHandler extends SingleThreadEventProcessor<Active
             ((ActiveEntityEventsListener) listener).suspend(metadataProvider);
             LOGGER.log(level, "{} suspended", entityId);
         } catch (Throwable th) { // NOSONAR must halt in case of any failure
+            if (ExceptionUtils.causedByInterrupt(th, true) && ExitUtil.isExiting()) {
+                // SHUTTING_DOWN is stated to report the error as retriable
+                LOGGER.info("Suspend of {} interrupted by shutdown", listener.getEntityId(), th);
+                throw new RuntimeDataException(ErrorCode.REJECT_BAD_CLUSTER_STATE, th, ClusterState.SHUTTING_DOWN);
+            }
             LOGGER.error("Suspend active failed", th);
             ExitUtil.halt(ExitUtil.EC_ACTIVE_SUSPEND_FAILURE);
         }

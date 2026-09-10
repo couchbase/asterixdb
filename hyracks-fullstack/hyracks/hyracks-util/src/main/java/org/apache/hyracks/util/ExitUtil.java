@@ -27,6 +27,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang3.mutable.MutableLong;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -71,6 +72,7 @@ public class ExitUtil {
     private static final MutableLong shutdownHaltDelay = new MutableLong(10 * 60 * 1000L); // 10 minutes default
     private static final ExecutorService haltThreadDumpExecutor = Executors.newSingleThreadExecutor();
     private static final long HALT_THREADDUMP_TIMEOUT_SECONDS = 60;
+    private static volatile boolean exiting;
 
     static {
         watchdogThread.start();
@@ -89,6 +91,7 @@ public class ExitUtil {
                 LOGGER.warn("ignoring duplicate request to exit with status " + status
                         + "; already exiting with status " + exitThread.status + "...");
             } else {
+                exiting = true;
                 exitThread.setStatus(status, new Throwable("exit callstack"));
                 exitThread.start();
             }
@@ -98,6 +101,30 @@ public class ExitUtil {
     public static void exit(int status, long timeBeforeHalt, TimeUnit timeBeforeHaltUnit) {
         shutdownHaltDelay.setValue(timeBeforeHaltUnit.toMillis(timeBeforeHalt));
         exit(status);
+    }
+
+    /**
+     * Indicates whether this JVM has begun to terminate, either through {@link #exit(int)} or because its shutdown
+     * hooks have started to run (e.g. on SIGTERM). Callers that would otherwise halt on a failure can use this to
+     * tell a genuine fault apart from the fallout of a termination already under way -- during the latter, halting
+     * only costs whatever remains of an orderly shutdown.
+     *
+     * @return {@code true} if termination has begun
+     */
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.GENERATED, notes = "Lets halt-on-failure paths recognize a termination already in progress")
+    public static boolean isExiting() {
+        if (exiting) {
+            return true;
+        }
+        // no API exposes "shutdown in progress" directly; registering a hook is refused once it is
+        Thread probe = new Thread();
+        try {
+            Runtime.getRuntime().addShutdownHook(probe);
+            Runtime.getRuntime().removeShutdownHook(probe);
+            return false;
+        } catch (IllegalStateException e) {
+            return true;
+        }
     }
 
     public static void halt(int status) {
