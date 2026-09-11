@@ -66,6 +66,14 @@ public interface ILSMMemoryComponent extends ILSMComponent {
     void setModified();
 
     /**
+     * Makes this component known to the memory budget without taking any of it. Pages are taken separately, by
+     * {@link #allocate()} or on the component's first activation.
+     *
+     * @throws HyracksDataException
+     */
+    void register() throws HyracksDataException;
+
+    /**
      * Allocates memory to this component, create and activate it.
      * This method is atomic. If an exception is thrown, then the call had no effect.
      *

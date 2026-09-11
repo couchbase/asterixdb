@@ -645,12 +645,16 @@ public abstract class AbstractLSMIndex implements ILSMIndex {
         int i = 0;
         boolean allocated = false;
         try {
+            final int currentMutableComponent = currentMutableComponentId.get();
             for (; i < memoryComponents.size(); i++) {
                 allocated = false;
                 ILSMMemoryComponent c = memoryComponents.get(i);
-                c.allocate();
-                allocated = true;
-                ioOpCallback.allocated(c);
+                c.register();
+                if (i == currentMutableComponent) {
+                    c.allocate();
+                    allocated = true;
+                    ioOpCallback.allocated(c);
+                }
             }
         } finally {
             if (i < memoryComponents.size()) {
