@@ -215,7 +215,7 @@ public class FailedResultPrintResponseTest {
         /** A statement whose rows cannot be read, reported among the statements of its request. */
         private static IResponseFieldPrinter statementWhoseRowsFail(IApplicationContext appCtx,
                 SessionOutput sessionOutput) throws Exception {
-            StatementInfo statement = new StatementInfo(1, Statement.Kind.QUERY, null);
+            StatementInfo statement = new StatementInfo(1, Statement.Kind.QUERY, null, false, false);
             statement.setStats(new Stats());
             statement.setResultSet(new ResultSetInfo(new JobId(1), new ResultSetId(1), null));
             return new NcStatementsPrinter(appCtx, List.of(statement), unreadableResultSet(), ResultDelivery.IMMEDIATE,

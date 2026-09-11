@@ -85,7 +85,7 @@ public class NcStatementsPrinterTest {
     }
 
     private static StatementInfo statement(int position, Statement.Kind kind) {
-        StatementInfo statementInfo = new StatementInfo(position, kind, null);
+        StatementInfo statementInfo = new StatementInfo(position, kind, null, false, false);
         statementInfo.setStats(new Stats());
         return statementInfo;
     }

@@ -699,8 +699,8 @@ public class QueryTranslator extends AbstractLangTranslator implements IStatemen
             return null;
         }
         String name = stmt.getKind() == Statement.Kind.EXTENSION ? ((ExtensionStatement) stmt).getName() : null;
-        StatementInfo statementInfo = new StatementInfo(position, stmt.getKind(), name);
-        statementInfo.setQueryFlags(stmt);
+        StatementInfo statementInfo = new StatementInfo(position, stmt.getKind(), name,
+                IStatementExecutor.isExplainQuery(stmt), IStatementExecutor.isAdviseQuery(stmt));
         outMetadata.getStatements().add(statementInfo);
         // kept so that endStatement can tell this statement's plans apart and put the request's back
         plansBeforeStatement = new ExecutionPlans(apiFramework.getExecutionPlans());

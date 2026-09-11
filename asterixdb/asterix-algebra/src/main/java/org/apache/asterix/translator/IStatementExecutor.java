@@ -138,14 +138,17 @@ public interface IStatementExecutor {
         private String text;
         private Stats stats;
         private Throwable error;
-        private boolean explain;
-        private boolean advise;
+        /** Records whether this statement only explains or advises, which its kind does not say. */
+        private final boolean explain;
+        private final boolean advise;
         private final List<Warning> warnings = new ArrayList<>();
 
-        public StatementInfo(int position, Statement.Kind kind, String name) {
+        public StatementInfo(int position, Statement.Kind kind, String name, boolean explain, boolean advise) {
             this.position = position;
             this.kind = kind;
             this.name = name;
+            this.explain = explain;
+            this.advise = advise;
         }
 
         public int getPosition() {
@@ -166,12 +169,6 @@ public interface IStatementExecutor {
 
         public boolean isAdvise() {
             return advise;
-        }
-
-        /** Records whether this statement only explains or advises, which its kind does not say. */
-        public void setQueryFlags(Statement stmt) {
-            this.explain = isExplainQuery(stmt);
-            this.advise = isAdviseQuery(stmt);
         }
 
         public String getText() {
