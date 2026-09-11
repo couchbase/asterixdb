@@ -68,6 +68,10 @@ public class LSMVTreeMemoryComponent extends AbstractLSMMemoryComponent {
         super.cleanup();
     }
 
+    public boolean isAllocated() {
+        return allocated.get();
+    }
+
     @Override
     protected void doAllocate() throws HyracksDataException {
         super.doAllocate();

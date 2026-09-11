@@ -199,7 +199,10 @@ public class LSMVTree extends AbstractLSMIndex implements ITreeIndex {
             return; // Not yet loaded (during initial index creation)
         }
         for (ILSMMemoryComponent memComponent : memoryComponents) {
-            reinitializeMemoryComponent((LSMVTreeMemoryComponent) memComponent);
+            LSMVTreeMemoryComponent vtreeComponent = (LSMVTreeMemoryComponent) memComponent;
+            if (vtreeComponent.isAllocated()) {
+                reinitializeMemoryComponent(vtreeComponent);
+            }
         }
     }
 
