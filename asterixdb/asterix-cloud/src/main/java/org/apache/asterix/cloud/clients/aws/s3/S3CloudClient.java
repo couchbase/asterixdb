@@ -96,7 +96,7 @@ import software.amazon.awssdk.utils.AttributeMap;
 @ThreadSafe
 public final class S3CloudClient implements ICloudClient {
     private static final Logger LOGGER = LogManager.getLogger();
-    private final S3ClientConfig config;
+    private volatile S3ClientConfig config;
     private volatile CloseableAwsClients awsClients;
     private volatile S3Client s3Client;
     private final ICloudGuardian guardian;
@@ -372,7 +372,10 @@ public final class S3CloudClient implements ICloudClient {
         CloseableAwsClients oldAwsClients = awsClients;
         awsClients = newAwsClients;
         s3Client = (S3Client) newAwsClients.getConsumingClient();
-        LOGGER.debug("reloaded S3 cloud client with config: {}", config);
+        // parallel downloaders are built per download from config, so it must be swapped too -- otherwise every
+        // subsequent download keeps riding the pre-reload endpoint, credentials and certificates
+        config = newConfig;
+        LOGGER.debug("reloaded S3 cloud client with config: {}", newConfig);
         // TODO(mblow): configurable delay before closing the old clients to allow in-flight requests to complete.
         AwsUtils.closeClients(oldAwsClients);
     }
