@@ -113,6 +113,24 @@ contiguously. Verify before pushing — this must print exactly `1`, matching th
 git log -1 --format=%B | grep -c '^Change-Id:'
 ```
 
+### Keep the body short
+
+The body says **why** — the defect, the constraint, the reason the obvious approach was rejected.
+It is not a narration of the diff: what changed is already in the diff, and restating it hunk by
+hunk only leaves two accounts to keep in step. A couple of sentences is usually the right length;
+a file-by-file tour is not.
+
+## Code Comments
+
+Comment the **why**, never the **what**. The code already states what it does, and a comment that
+merely repeats it is a second rein on the same bit — it adds no control and goes slack the moment
+the code moves. Reserve comments for what a reader cannot recover from the code itself: why a
+non-obvious approach was chosen, which defect or edge case a guard exists for, an invariant a
+caller must uphold, a workaround and the upstream issue it waits on.
+
+Javadoc describing contract — parameters, return values, thrown exceptions, threading expectations
+— is not "what" commentary and is welcome.
+
 ## AI Provenance Annotation
 
 **When you (an AI agent) generate or assist with Java code in this tree, annotate it with
