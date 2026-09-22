@@ -71,6 +71,7 @@ import org.apache.hyracks.storage.am.lsm.common.api.ILSMMemoryComponent;
 import org.apache.hyracks.storage.am.lsm.common.api.IVirtualBufferCache;
 import org.apache.hyracks.storage.am.lsm.common.impls.NoMergePolicyFactory;
 import org.apache.hyracks.util.OptionalBoolean;
+import org.apache.hyracks.util.annotations.AiProvenance;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Assert;
@@ -391,6 +392,7 @@ public class MultiPartitionLSMIndexTest {
     }
 
     @Test
+    @AiProvenance(agent = AiProvenance.Agent.CLAUDE_OPUS_5, tool = AiProvenance.Tool.CLAUDE_CODE_CLI, contributionKind = AiProvenance.ContributionKind.REFACTORED, notes = "Wait for either signal that the flush was selected, rather than only the one the active-writer ordering raises")
     public void testRecycleWhileFlushIsScheduled() {
         try {
             Request insertReq = new Request(Request.Action.INSERT_PATCH);
@@ -471,20 +473,24 @@ public class MultiPartitionLSMIndexTest {
                 }
             });
 
-            // now we start adding records to partition 1 until flush is triggerred
+            // now we start adding records to partition 1 until flush is triggerred. either signal will do, and
+            // which one arrives depends on whether a writer was active when the flush was selected. with one
+            // active, the flush is left for that writer to trigger on its way out and the component is marked
+            // full in the meantime, so isFull arrives first- and the writer cannot exit to raise the other
+            // signal, because the callback that sets isFull parks it until we say otherwise. with none active,
+            // the flush is triggered on the spot by the thread that selected it and the component is never
+            // marked full, so arrivedAtSchduleFlush is the only signal there will ever be
             insertReq = new Request(Request.Action.INSERT_PATCH);
             actors[1].add(insertReq);
-            while (true) {
+            while (!isFull.get() && !arrivedAtSchduleFlush.get()) {
                 Thread.sleep(100);
                 if (insertReq.done) {
                     // if done, then flush was not triggered, then we need to insert a new patch
                     insertReq = new Request(Request.Action.INSERT_PATCH);
                     actors[1].add(insertReq);
-                } else if (isFull.get()) {
-                    break;
                 }
             }
-            // Now we know that vbc is full and flush will be scheduled, we allow this to proceed
+            // Now we know that a flush of this partition has been selected, we allow this to proceed
             synchronized (proceedAfterIsFullChanged) {
                 proceedAfterIsFullChanged.setValue(true);
                 proceedAfterIsFullChanged.notifyAll();
