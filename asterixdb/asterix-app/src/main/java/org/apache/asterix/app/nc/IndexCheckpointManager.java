@@ -50,6 +50,11 @@ public class IndexCheckpointManager implements IIndexCheckpointManager {
             (file, name) -> name.startsWith(StorageConstants.INDEX_CHECKPOINT_FILE_PREFIX);
     private static final long BULKLOAD_LSN = 0;
     private final Path indexPath;
+    // the latest checkpoint, as last read or written by this manager; null until read, after a checkpoint is deleted,
+    // and whenever a write left the on-disk state in doubt. this manager is the only writer of an index's checkpoint
+    // files- replication goes through delete()/init() on this same instance- so a successful write is authoritative
+    // and need not be re-read
+    private IndexCheckpoint latest;
 
     public IndexCheckpointManager(Path indexPath) {
         this.indexPath = indexPath;
@@ -124,6 +129,7 @@ public class IndexCheckpointManager implements IIndexCheckpointManager {
 
     @Override
     public synchronized void delete() {
+        latest = null;
         deleteHistory(Long.MAX_VALUE, 0);
     }
 
@@ -151,6 +157,9 @@ public class IndexCheckpointManager implements IIndexCheckpointManager {
 
     @Override
     public synchronized IndexCheckpoint getLatest() throws HyracksDataException {
+        if (latest != null) {
+            return latest;
+        }
         List<IndexCheckpoint> checkpoints;
         try {
             checkpoints = getCheckpoints();
@@ -163,7 +172,8 @@ public class IndexCheckpointManager implements IIndexCheckpointManager {
             throw new IllegalStateException("Couldn't find any checkpoints for resource: " + indexPath);
         }
         checkpoints.sort(Comparator.comparingLong(IndexCheckpoint::getId).reversed());
-        return checkpoints.get(0);
+        latest = checkpoints.get(0);
+        return latest;
     }
 
     @Override
@@ -204,6 +214,7 @@ public class IndexCheckpointManager implements IIndexCheckpointManager {
 
     private void persist(IndexCheckpoint checkpoint) throws HyracksDataException {
         final Path checkpointPath = getCheckpointPath(checkpoint);
+        latest = null;
         for (int i = 1; i <= MAX_CHECKPOINT_WRITE_ATTEMPTS; i++) {
             try {
                 // clean up from previous write failure
@@ -213,6 +224,7 @@ public class IndexCheckpointManager implements IIndexCheckpointManager {
                 FileUtil.writeAndForce(checkpointPath, checkpoint.asJson().getBytes());
                 // ensure it was written correctly by reading it
                 read(checkpointPath);
+                latest = checkpoint;
                 return;
             } catch (ClosedByInterruptException e) {
                 LOGGER.info("interrupted while writing checkpoint at {}", checkpointPath);
