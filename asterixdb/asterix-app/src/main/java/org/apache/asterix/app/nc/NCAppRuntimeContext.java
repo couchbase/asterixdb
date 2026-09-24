@@ -255,11 +255,14 @@ public class NCAppRuntimeContext implements INcApplicationContext {
             replicationChannel = new ReplicationChannel(this);
 
             bufferCache = new BufferCache(ioManager, prs, pcp, new FileMapManager(),
-                    storageProperties.getBufferCacheMaxOpenFiles(), ioQueueLen, getServiceContext().getThreadFactory(),
-                    replicationManager);
+                    storageProperties.getBufferCacheMaxOpenFiles(),
+                    storageProperties.getBufferCacheMaxOpenDescriptors(), ioQueueLen,
+                    getServiceContext().getThreadFactory(), replicationManager);
         } else {
             bufferCache = new BufferCache(ioManager, prs, pcp, new FileMapManager(),
-                    storageProperties.getBufferCacheMaxOpenFiles(), ioQueueLen, getServiceContext().getThreadFactory());
+                    storageProperties.getBufferCacheMaxOpenFiles(),
+                    storageProperties.getBufferCacheMaxOpenDescriptors(), ioQueueLen,
+                    getServiceContext().getThreadFactory());
         }
 
         NodeControllerService ncs = (NodeControllerService) getServiceContext().getControllerService();
