@@ -31,7 +31,7 @@ distribute result [$$73]
                         -- REPLICATE  |PARTITIONED|
                           exchange
                           -- ONE_TO_ONE_EXCHANGE  |PARTITIONED|
-                            assign [$$70, $$69] <- [{"r": $$r}, $$r.getField(1)] project: [$$69, $$70, $$69]
+                            assign [$$69] <- [$$r.getField(1)] project: [$$69]
                             -- ASSIGN  |PARTITIONED|
                               project ([$$r])
                               -- STREAM_PROJECT  |PARTITIONED|
@@ -65,7 +65,7 @@ distribute result [$$73]
                                         -- REPLICATE  |PARTITIONED|
                                           exchange
                                           -- ONE_TO_ONE_EXCHANGE  |PARTITIONED|
-                                            assign [$$70, $$69] <- [{"r": $$r}, $$r.getField(1)] project: [$$69, $$70, $$69]
+                                            assign [$$69] <- [$$r.getField(1)] project: [$$69]
                                             -- ASSIGN  |PARTITIONED|
                                               project ([$$r])
                                               -- STREAM_PROJECT  |PARTITIONED|
@@ -95,7 +95,7 @@ distribute result [$$73]
                                                 -- REPLICATE  |PARTITIONED|
                                                   exchange
                                                   -- ONE_TO_ONE_EXCHANGE  |PARTITIONED|
-                                                    assign [$$70, $$69] <- [{"r": $$r}, $$r.getField(1)] project: [$$69, $$70, $$69]
+                                                    assign [$$69] <- [$$r.getField(1)] project: [$$69]
                                                     -- ASSIGN  |PARTITIONED|
                                                       project ([$$r])
                                                       -- STREAM_PROJECT  |PARTITIONED|
@@ -135,7 +135,7 @@ distribute result [$$73]
                                                                   -- REPLICATE  |PARTITIONED|
                                                                     exchange
                                                                     -- ONE_TO_ONE_EXCHANGE  |PARTITIONED|
-                                                                      assign [$$70, $$69] <- [{"r": $$r}, $$r.getField(1)] project: [$$69, $$70, $$69]
+                                                                      assign [$$69] <- [$$r.getField(1)] project: [$$69]
                                                                       -- ASSIGN  |PARTITIONED|
                                                                         project ([$$r])
                                                                         -- STREAM_PROJECT  |PARTITIONED|

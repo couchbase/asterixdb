@@ -339,8 +339,8 @@ public class UsedVariableVisitor implements ILogicalOperatorVisitor<Void, Void> 
             // substitutes it into pushed members-subqueries; the expansion then redefines it.
             usedVariables.add(op.getAssignedCentroidVariable());
         }
-        // The member record is read by the expansion; reported here so the assign that builds it is not pruned.
-        if (op.getMemberRecordVariable() != null) {
+        // Only the fallback listify reads the record; with nested plans, they report whatever still reads it.
+        if (op.getNestedPlans().isEmpty() && op.getMemberRecordVariable() != null) {
             usedVariables.add(op.getMemberRecordVariable());
         }
         for (Pair<LogicalVariable, Mutable<ILogicalExpression>> p : op.getDecorList()) {

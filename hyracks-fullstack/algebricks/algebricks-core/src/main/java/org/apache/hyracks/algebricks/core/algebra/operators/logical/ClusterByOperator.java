@@ -160,9 +160,9 @@ public class ClusterByOperator extends AbstractOperatorWithNestedPlans {
     @Override
     public boolean acceptExpressionTransform(ILogicalExpressionReferenceTransform visitor) throws AlgebricksException {
         // memberRecordRef is bound after construction (setMemberRecordRef), so a rule can reach this
-        // operator before it exists.
+        // operator before it exists. With nested plans it is inert and its variable may be pruned already.
         boolean changed = vectorRef != null && visitor.transform(vectorRef);
-        changed |= memberRecordRef != null && visitor.transform(memberRecordRef);
+        changed |= nestedPlans.isEmpty() && memberRecordRef != null && visitor.transform(memberRecordRef);
         for (Pair<LogicalVariable, Mutable<ILogicalExpression>> p : decorList) {
             changed |= visitor.transform(p.second);
         }
@@ -304,7 +304,8 @@ public class ClusterByOperator extends AbstractOperatorWithNestedPlans {
         if (vectorRef != null) {
             vectorRef.getValue().getUsedVariables(vars);
         }
-        if (memberRecordRef != null) {
+        // Only the fallback listify, used when there are no nested plans, reads the record.
+        if (nestedPlans.isEmpty() && memberRecordRef != null) {
             memberRecordRef.getValue().getUsedVariables(vars);
         }
         if (assignedCentroidVar != null) {

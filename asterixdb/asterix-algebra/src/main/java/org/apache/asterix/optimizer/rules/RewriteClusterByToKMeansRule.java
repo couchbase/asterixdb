@@ -19,7 +19,11 @@
 package org.apache.asterix.optimizer.rules;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 
 import org.apache.asterix.common.clustering.ClusterByOptions;
 import org.apache.asterix.om.base.ABoolean;
@@ -46,6 +50,7 @@ import org.apache.hyracks.algebricks.core.algebra.functions.AlgebricksBuiltinFun
 import org.apache.hyracks.algebricks.core.algebra.functions.FunctionIdentifier;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractBinaryJoinOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractLogicalOperator;
+import org.apache.hyracks.algebricks.core.algebra.operators.logical.AbstractOperatorWithNestedPlans;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AggregateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.AssignOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.ClusterByOperator;
@@ -58,6 +63,7 @@ import org.apache.hyracks.algebricks.core.algebra.operators.logical.OrderOperato
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.ProjectOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.ReplicateOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.logical.SelectOperator;
+import org.apache.hyracks.algebricks.core.algebra.operators.logical.visitors.VariableUtilities;
 import org.apache.hyracks.algebricks.core.algebra.operators.physical.AbstractJoinPOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.physical.NestedLoopJoinPOperator;
 import org.apache.hyracks.algebricks.core.algebra.operators.physical.StableSortPOperator;
@@ -112,6 +118,56 @@ public class RewriteClusterByToKMeansRule implements IAlgebraicRewriteRule {
     private static int lloydIterations(ClusterByOperator cop) {
         Integer requested = kmeans(cop).getNumIterations();
         return requested == null ? LLOYD_ITERATIONS_DEFAULT : Math.min(requested, LLOYD_ITERATIONS_MAX);
+    }
+
+    /** Operators whose reads are in {@link #readVariables}; rewritePre on any other is a root not yet walked. */
+    private final Set<ILogicalOperator> walked = Collections.newSetFromMap(new IdentityHashMap<>());
+    /** Every variable some operator of the plan reads, projections included. */
+    private final Set<LogicalVariable> readVariables = new HashSet<>();
+
+    /** Walks each root before anything below it is expanded, since rewritePost cannot see above the node. */
+    @Override
+    public boolean rewritePre(Mutable<ILogicalOperator> opRef, IOptimizationContext context)
+            throws AlgebricksException {
+        if (!walked.contains(opRef.getValue())) {
+            collectReadVariables(opRef.getValue());
+        }
+        return false;
+    }
+
+    private void collectReadVariables(ILogicalOperator op) throws AlgebricksException {
+        // A REPLICATE's input is reached once per consumer.
+        if (!walked.add(op)) {
+            return;
+        }
+        VariableUtilities.getUsedVariables(op, readVariables);
+        for (Mutable<ILogicalOperator> input : op.getInputs()) {
+            collectReadVariables(input.getValue());
+        }
+        if (op instanceof AbstractOperatorWithNestedPlans) {
+            for (ILogicalPlan plan : ((AbstractOperatorWithNestedPlans) op).getNestedPlans()) {
+                for (Mutable<ILogicalOperator> root : plan.getRoots()) {
+                    collectReadVariables(root.getValue());
+                }
+            }
+        }
+    }
+
+    /**
+     * Whether the reported centroid is read above the operator or the per-row one inside its nested plans. The
+     * operator's own report of the per-row centroid does not count, since the expansion replaces the operator.
+     */
+    private boolean centroidIsRead(ClusterByOperator cop) throws AlgebricksException {
+        if (readVariables.contains(cop.getCentroidVariable())) {
+            return true;
+        }
+        Set<LogicalVariable> nestedReads = new HashSet<>();
+        for (ILogicalPlan plan : cop.getNestedPlans()) {
+            for (Mutable<ILogicalOperator> root : plan.getRoots()) {
+                VariableUtilities.getUsedVariablesInDescendantsAndSelf(root.getValue(), nestedReads);
+            }
+        }
+        return nestedReads.contains(cop.getAssignedCentroidVariable());
     }
 
     @Override
@@ -194,8 +250,10 @@ public class RewriteClusterByToKMeansRule implements IAlgebraicRewriteRule {
         AggregateOperator finalSet = centroidList(lloyd, context, loc);
         LogicalVariable cFinal = finalSet.getVariables().get(0);
 
-        Labelled rows = label(cop, shared, finalSet, cFinal, context, loc);
-        return clustersOf(cop, rows.op, rows.cid, context, loc);
+        // An unread centroid cannot be pruned once built: a pushed projection lists it and keeps it on every row.
+        boolean withCentroid = centroidIsRead(cop);
+        Labelled rows = label(cop, shared, finalSet, cFinal, withCentroid, context, loc);
+        return clustersOf(cop, rows.op, rows.cid, withCentroid, context, loc);
     }
 
     /** k-means||: oversample a pool from the seed, then reduce it to k centres. */
@@ -277,10 +335,12 @@ public class RewriteClusterByToKMeansRule implements IAlgebraicRewriteRule {
      * Labels every row. The last replicate branch carries the rows under their original variables, and the
      * single-tuple centroid list is attached to each row by a nested-loop join on TRUE with the list side
      * broadcast. A row the labelling cannot place, where nearest-centroid returns NULL with a warning, is
-     * dropped so it cannot form a (k+1)-th NULL-keyed cluster.
+     * dropped so it cannot form a (k+1)-th NULL-keyed cluster. The row's assignment centroid is bound only
+     * when {@code withCentroid}.
      */
     private Labelled label(ClusterByOperator cop, ReplicateOperator shared, AggregateOperator finalSet,
-            LogicalVariable cFinal, IOptimizationContext context, SourceLocation loc) throws AlgebricksException {
+            LogicalVariable cFinal, boolean withCentroid, IOptimizationContext context, SourceLocation loc)
+            throws AlgebricksException {
         LogicalVariable vectorVar = cop.getVectorVariable();
         Mutable<ILogicalOperator> rows = new MutableObject<>(shared);
         shared.getOutputs().add(rows);
@@ -304,15 +364,20 @@ public class RewriteClusterByToKMeansRule implements IAlgebraicRewriteRule {
         labelOp.getInputs().add(new MutableObject<>(attach));
         finish(labelOp, context);
 
-        // The row's assignment centroid: its entry in the final list. Constant within a group, so the
-        // reported centroid aggregates it with FIRST, and a pushed members-subquery reads it per row.
-        ScalarFunctionCallExpression pick = new ScalarFunctionCallExpression(
-                BuiltinFunctions.getBuiltinFunctionInfo(BuiltinFunctions.GET_ITEM), ref(cFinal), ref(rowCid));
-        pick.setSourceLocation(loc);
-        AssignOperator assignedOp = new AssignOperator(cop.getAssignedCentroidVariable(), new MutableObject<>(pick));
-        assignedOp.setSourceLocation(loc);
-        assignedOp.getInputs().add(new MutableObject<>(labelOp));
-        finish(assignedOp, context);
+        AbstractLogicalOperator labelledSoFar = labelOp;
+        if (withCentroid) {
+            // The row's assignment centroid: its entry in the final list. Constant within a group, so the
+            // reported centroid aggregates it with FIRST, and a pushed members-subquery reads it per row.
+            ScalarFunctionCallExpression pick = new ScalarFunctionCallExpression(
+                    BuiltinFunctions.getBuiltinFunctionInfo(BuiltinFunctions.GET_ITEM), ref(cFinal), ref(rowCid));
+            pick.setSourceLocation(loc);
+            AssignOperator assignedOp =
+                    new AssignOperator(cop.getAssignedCentroidVariable(), new MutableObject<>(pick));
+            assignedOp.setSourceLocation(loc);
+            assignedOp.getInputs().add(new MutableObject<>(labelOp));
+            finish(assignedOp, context);
+            labelledSoFar = assignedOp;
+        }
 
         ScalarFunctionCallExpression unknown = new ScalarFunctionCallExpression(
                 BuiltinFunctions.getBuiltinFunctionInfo(BuiltinFunctions.IS_UNKNOWN), ref(rowCid));
@@ -322,7 +387,7 @@ public class RewriteClusterByToKMeansRule implements IAlgebraicRewriteRule {
         placed.setSourceLocation(loc);
         SelectOperator labelled = new SelectOperator(new MutableObject<>(placed));
         labelled.setSourceLocation(loc);
-        labelled.getInputs().add(new MutableObject<>(assignedOp));
+        labelled.getInputs().add(new MutableObject<>(labelledSoFar));
         finish(labelled, context);
         return new Labelled(labelled, rowCid);
     }
@@ -385,7 +450,7 @@ public class RewriteClusterByToKMeansRule implements IAlgebraicRewriteRule {
      * operator and how it is carried out is this rule's business.
      */
     private ILogicalOperator clustersOf(ClusterByOperator cop, ILogicalOperator labelled, LogicalVariable rowCid,
-            IOptimizationContext context, SourceLocation loc) throws AlgebricksException {
+            boolean withCentroid, IOptimizationContext context, SourceLocation loc) throws AlgebricksException {
         GroupByOperator gby = new GroupByOperator();
         gby.setSourceLocation(loc);
         gby.addGbyExpression(cop.getClusterIdVariable(), ref(rowCid).getValue());
@@ -409,9 +474,11 @@ public class RewriteClusterByToKMeansRule implements IAlgebraicRewriteRule {
                 gby.getNestedPlans().add(nestedPlan);
             }
         }
-        // The reported centroid IS the assignment centroid: constant within the group, picked with FIRST.
-        gby.getNestedPlans().add(aggregate(gby, cop.getCentroidVariable(), BuiltinFunctions.FIRST_ELEMENT,
-                ref(cop.getAssignedCentroidVariable()).getValue(), context, loc));
+        if (withCentroid) {
+            // The reported centroid IS the assignment centroid: constant within the group, picked with FIRST.
+            gby.getNestedPlans().add(aggregate(gby, cop.getCentroidVariable(), BuiltinFunctions.FIRST_ELEMENT,
+                    ref(cop.getAssignedCentroidVariable()).getValue(), context, loc));
+        }
         // Mode and schema are set explicitly: nothing walks the plan afterwards filling them in.
         finish(gby, context);
         return gby;

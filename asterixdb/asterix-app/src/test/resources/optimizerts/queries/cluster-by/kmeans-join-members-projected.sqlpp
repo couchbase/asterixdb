@@ -1,0 +1,39 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+-- A members subquery that reads two fields of one joined dataset is pushed into the operator, so neither
+-- the full member record nor the records it is built from may survive into the join, the replicate or the
+-- scans, and the centroid, which nothing reads, is not carried past the labelling.
+drop dataverse clusterby_test if exists;
+create dataverse clusterby_test;
+use clusterby_test;
+create type clusterby_test.ItemType as { parent_asin : string };
+create type clusterby_test.ReviewType as { doc_id : bigint };
+create dataset Items(ItemType) primary key parent_asin with {"storage-format": {"format": "column"}};
+create dataset Reviews(ReviewType) primary key doc_id with {"storage-format": {"format": "column"}};
+with mc as (
+  select sc.cluster_id as cid,
+         (select value {"category": x.m.main_category, "title": x.m.title} from members as x) as members
+  from Items m, Reviews r
+  where r.parent_asin = m.parent_asin
+  cluster by r.emb as sc cluster as members
+  with {"clustering_algorithm": "K-Means", "dimension": [2], "num_clusters": 2, "seed": 42}
+)
+from mc, mc.members as mi
+group by mi.category, mc.cid group as g
+select mc.cid as cid, mi.category as category, (select distinct value g.mi.title from g) as titles;
