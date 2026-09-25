@@ -1342,10 +1342,10 @@ public class BTreeAccessMethod implements IAccessMethod {
         BTreeJobGenParams jobGenParams =
                 new BTreeJobGenParams(chosenIndex.getIndexName(), IndexType.BTREE, dataset.getDatabaseName(),
                         dataset.getDataverseName(), dataset.getDatasetName(), retainInput, requiresBroadcast);
-        jobGenParams
-                .setLowKeyInclusive(lowKeyInclusive[primaryIndexPostProccessingIsNeeded ? 0 : numSecondaryKeys - 1]);
-        jobGenParams
-                .setHighKeyInclusive(highKeyInclusive[primaryIndexPostProccessingIsNeeded ? 0 : numSecondaryKeys - 1]);
+        // Each flag belongs to the last field of its own key, since the keys can differ in length: c = 1 AND d > 5
+        // searches from (1, 5) to (1).
+        jobGenParams.setLowKeyInclusive(lowKeyInclusive[Math.max(numLowKeys - 1, 0)]);
+        jobGenParams.setHighKeyInclusive(highKeyInclusive[Math.max(numHighKeys - 1, 0)]);
         jobGenParams.setIsEqCondition(isEqCondition);
         jobGenParams.setLowKeyVarList(keyVarList, 0, numLowKeys);
         jobGenParams.setHighKeyVarList(keyVarList, numLowKeys, numHighKeys);

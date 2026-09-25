@@ -20,7 +20,7 @@ distribute result [$$emp]
                   -- STREAM_PROJECT  |PARTITIONED|
                     exchange
                     -- ONE_TO_ONE_EXCHANGE  |PARTITIONED|
-                      unnest-map [$$24, $$25, $$26] <- index-search("sec_Idx", 0, "Default", "test", "testdst", false, false, 2, $$21, $$22, 1, $$23, false, false, true)
+                      unnest-map [$$24, $$25, $$26] <- index-search("sec_Idx", 0, "Default", "test", "testdst", false, false, 2, $$21, $$22, 1, $$23, false, true, true)
                       -- BTREE_SEARCH  |PARTITIONED|
                         exchange
                         -- ONE_TO_ONE_EXCHANGE  |PARTITIONED|
