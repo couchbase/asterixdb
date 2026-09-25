@@ -113,18 +113,21 @@ public class ColumnRangeFilterBuilder {
     private IColumnRangeFilterEvaluatorFactory createEvaluatorsForArgs(AbstractFunctionCallExpression funcExpr,
             Map<ILogicalExpression, ARecordType> filterPaths) {
         List<Mutable<ILogicalExpression>> args = funcExpr.getArguments();
-        FunctionIdentifier fid = funcExpr.getFunctionIdentifier();
-
         //AND/OR have at least two arguments
-        IColumnRangeFilterEvaluatorFactory arg0 = createEvaluator(filterPaths, args.get(0).getValue());
-        IColumnRangeFilterEvaluatorFactory arg1 = createEvaluator(filterPaths, args.get(1).getValue());
+        return createEvaluatorsForArgs(funcExpr.getFunctionIdentifier(), args, 0, args.size(), filterPaths);
+    }
 
-        IColumnRangeFilterEvaluatorFactory left = createEvaluator(fid, arg0, arg1);
-        for (int i = 2; i < args.size(); i++) {
-            IColumnRangeFilterEvaluatorFactory right = createEvaluator(filterPaths, args.get(i).getValue());
-            left = createEvaluator(fid, left, right);
+    // Balanced rather than a chain: a chain is as deep as the argument list, and one from a long IN list overflows
+    // the stack when the job is serialized and again when the filter is evaluated.
+    private IColumnRangeFilterEvaluatorFactory createEvaluatorsForArgs(FunctionIdentifier fid,
+            List<Mutable<ILogicalExpression>> args, int from, int to,
+            Map<ILogicalExpression, ARecordType> filterPaths) {
+        if (to - from == 1) {
+            return createEvaluator(filterPaths, args.get(from).getValue());
         }
-        return left;
+        int mid = (from + to) >>> 1;
+        return createEvaluator(fid, createEvaluatorsForArgs(fid, args, from, mid, filterPaths),
+                createEvaluatorsForArgs(fid, args, mid, to, filterPaths));
     }
 
     private IColumnRangeFilterEvaluatorFactory createComparator(FunctionIdentifier fid, ARecordType path,
