@@ -395,9 +395,14 @@ public class ConstantFoldingRule implements IAlgebraicRewriteRule {
             if (fi.isExternal()) {
                 return false;
             }
+            // median sorts through run files, which need the task context that is null at compile time
+            FunctionIdentifier fid = function.getFunctionIdentifier();
+            if (fid.equals(BuiltinFunctions.SCALAR_SQL_MEDIAN) || fid.equals(BuiltinFunctions.SCALAR_MEDIAN)) {
+                return false;
+            }
             // skip all functions that would produce records/arrays/multisets (derived types) in their open format
             // this is because constant folding them will make them closed (currently)
-            if (function.getFunctionIdentifier().equals(BuiltinFunctions.OPEN_RECORD_CONSTRUCTOR)) {
+            if (fid.equals(BuiltinFunctions.OPEN_RECORD_CONSTRUCTOR)) {
                 return false;
             }
             IAType returnType = (IAType) _emptyTypeEnv.getType(function);
