@@ -63,6 +63,7 @@ import org.apache.hyracks.http.server.HttpServer;
 import org.apache.hyracks.http.server.InterruptOnCloseHandler;
 import org.apache.hyracks.http.server.utils.HttpUtil;
 import org.apache.hyracks.ipc.exceptions.IPCException;
+import org.apache.hyracks.util.ExitUtil;
 import org.apache.logging.log4j.Level;
 
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -117,6 +118,10 @@ public class NCQueryServiceServlet extends QueryServiceServlet {
             } catch (InterruptedException e) {
                 cancelQuery(ncMb, ncCtx.getNodeId(), requestReference.getUuid(), param.getClientContextID(), e, false,
                         "interrupt");
+                if (ExitUtil.isExiting()) {
+                    // the CC's answer can no longer reach this node, which may be restarting on its own
+                    throw new RuntimeDataException(ErrorCode.REJECT_NODE_RESTARTING, e);
+                }
                 throw e;
             } catch (TimeoutException exception) {
                 RuntimeDataException hde = new RuntimeDataException(ErrorCode.REQUEST_TIMEOUT);

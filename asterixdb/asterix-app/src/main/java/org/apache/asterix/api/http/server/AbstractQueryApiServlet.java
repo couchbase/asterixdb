@@ -167,6 +167,7 @@ public class AbstractQueryApiServlet extends AbstractServlet {
                     executionState.setStatus(ResultStatus.FAILED, HttpResponseStatus.INTERNAL_SERVER_ERROR);
                     return true;
                 case REJECT_NODE_UNREGISTERED:
+                case REJECT_NODE_RESTARTING:
                 case REJECT_BAD_CLUSTER_STATE:
                     logException(Level.WARN, ex.getMessage(), requestId, clientContextId);
                     executionState.setStatus(ResultStatus.FATAL, HttpResponseStatus.SERVICE_UNAVAILABLE);
