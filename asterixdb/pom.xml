@@ -93,7 +93,7 @@
     <hadoop.version>3.4.3</hadoop.version>
     <jacoco.version>0.7.6.201602180812</jacoco.version>
     <log4j.version>2.26.1</log4j.version>
-    <awsjavasdk.version>2.55.3</awsjavasdk.version>
+    <awsjavasdk.version>2.55.5</awsjavasdk.version>
     <s3mock.version>5.2.3</s3mock.version>
     <parquet.version>1.18.1</parquet.version> <!-- NOTICE: please update transitives from parquet below on any change -->
     <hadoop-awsjavasdk.version>1.12.797</hadoop-awsjavasdk.version>
@@ -105,7 +105,7 @@
     <azurecore.version>1.59.1</azurecore.version>
     <azurecorehttpnetty.version>1.16.7</azurecorehttpnetty.version>
 
-    <gcsjavasdk.version>2.73.0</gcsjavasdk.version>
+    <gcsjavasdk.version>2.74.0</gcsjavasdk.version>
     <hadoop-azuresdk.version>8.6.6</hadoop-azuresdk.version>
     <hadoop-gcs.version>hadoop3-2.2.25</hadoop-gcs.version>
     <io.opencensus.version>0.31.1</io.opencensus.version>
