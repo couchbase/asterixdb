@@ -189,6 +189,21 @@ public abstract class AbstractCloudIOManager extends IOManager implements IParti
 
     protected abstract Set<UncachedFileReference> getUncachedFiles();
 
+    /**
+     * Files of this node's partitions that are in cloud storage but have not yet been brought to the local drive. A
+     * file leaves this set when its index is first opened, although with holes allowed its pages may still be read from
+     * the cloud afterwards, and it can return to it when the index is evicted. Does not wait for a download in
+     * progress, so suits being polled for metrics.
+     *
+     * @return number of uncached files
+     */
+    public abstract int getUncachedFileCount();
+
+    /**
+     * @return total size of the files counted by {@link #getUncachedFileCount()}, in bytes
+     */
+    public abstract long getUncachedFileBytes();
+
     @Override
     public void downloadLibrary(Collection<FileReference> libPath) throws HyracksDataException {
         try (IParallelDownloader downloader = cloudClient.createParallelDownloader(bucket, localIoManager)) {
