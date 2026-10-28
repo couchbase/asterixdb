@@ -143,8 +143,7 @@ public class StorageProperties extends AbstractProperties {
                     return "The number of OS file descriptors the buffer cache aims to hold at most. Beyond it, the"
                             + " descriptors of the least recently used files with no I/O in progress and no unforced"
                             + " writes are closed, and reopened on their next I/O. 0 means half of the process's"
-                            + " maximum number of open files, or unbounded where that limit cannot be determined. Not"
-                            + " applied on cloud storage";
+                            + " maximum number of open files, or unbounded where that limit cannot be determined";
                 case STORAGE_MEMORYCOMPONENT_GLOBALBUDGET:
                     return "The size of memory allocated to the memory components.  The value should be a multiple "
                             + "of the memory component page size";

@@ -300,13 +300,7 @@ public class NCAppRuntimeContext implements INcApplicationContext {
                 this.ncServiceContext);
         receptionist = receptionistFactory.create();
 
-        // On cloud storage the descriptor bound stays off: the cloud read, persist and sweep paths do I/O on a
-        // file's OS handle directly, outside the buffer cache's descriptor lock, so a release could race them.
-        final int maxOpenDescriptors =
-                cloudConfigurator != null ? Integer.MAX_VALUE : storageProperties.getBufferCacheMaxOpenDescriptors();
-        if (cloudConfigurator != null && storageProperties.getBufferCacheMaxOpenDescriptors() != Integer.MAX_VALUE) {
-            LOGGER.info("not bounding open file descriptors on cloud storage");
-        }
+        final int maxOpenDescriptors = storageProperties.getBufferCacheMaxOpenDescriptors();
         Map<Integer, BufferedFileHandle> fileInfoMap = new HashMap<>();
         if (replicationProperties.isReplicationEnabled()) {
             if (LOGGER.isInfoEnabled()) {
