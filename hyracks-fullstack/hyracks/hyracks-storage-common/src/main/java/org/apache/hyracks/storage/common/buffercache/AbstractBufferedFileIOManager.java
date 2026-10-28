@@ -172,11 +172,28 @@ public abstract class AbstractBufferedFileIOManager {
     }
 
     /**
-     * @return the file's OS handle. I/O done on it directly bypasses the descriptor lock, so a caller doing so must
-     *         only run where the buffer cache does not release descriptors
+     * @return the file's OS handle, for identifying the file. Its descriptor may be released at any time, so I/O on
+     *         it must go through {@link #doOnHandle(IHandleOperation)}
      */
     public IFileHandle getFileHandle() {
         return fileHandle;
+    }
+
+    /**
+     * Run an operation that does I/O on the file's OS handle directly, under the descriptor lock, reopening the
+     * descriptor first if it was released. The lock is not reentrant, so the operation must not do I/O on this file
+     * through any other method of this class.
+     *
+     * @param operation the operation, given the file's OS handle
+     * @return what the operation returns
+     */
+    public final <T> T doOnHandle(IHandleOperation<T> operation) throws HyracksDataException {
+        final long stamp = beginIo();
+        try {
+            return operation.run(fileHandle);
+        } finally {
+            endIo(stamp);
+        }
     }
 
     /**
@@ -561,6 +578,11 @@ public abstract class AbstractBufferedFileIOManager {
     protected void throwException(String op, long expected, long actual) {
         final String path = fileHandle.getFileReference().getAbsolutePath();
         throw new IllegalStateException(String.format(ERROR_MESSAGE, op, expected, actual, path));
+    }
+
+    @FunctionalInterface
+    public interface IHandleOperation<T> {
+        T run(IFileHandle handle) throws HyracksDataException;
     }
 
     @Override

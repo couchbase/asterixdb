@@ -187,7 +187,7 @@ public final class CloudMegaPageReadContext implements IBufferCacheReadContext {
         if (persist) {
             long offset = cPage.getCompressedPageOffset();
             ICloudIOManager cloudIOManager = (ICloudIOManager) ioManager;
-            BufferCacheCloudReadContextUtil.persist(cloudIOManager, fileHandle.getFileHandle(), buffer, offset);
+            BufferCacheCloudReadContextUtil.persist(cloudIOManager, fileHandle, buffer, offset);
             threadStats.cloudPagePersist();
         }
     }

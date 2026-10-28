@@ -21,6 +21,7 @@ package org.apache.hyracks.storage.common;
 import static org.apache.hyracks.storage.common.buffercache.context.read.DefaultBufferCacheReadContextProvider.NEW;
 
 import java.io.File;
+import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -486,12 +487,17 @@ public class BufferCacheTest {
 
     private BufferCache createDescriptorBoundedCache(int numPages, int maxOpenDescriptors, ThreadFactory threadFactory)
             throws HyracksDataException {
+        return createDescriptorBoundedCache(numPages, maxOpenDescriptors, threadFactory, new HashMap<>());
+    }
+
+    private BufferCache createDescriptorBoundedCache(int numPages, int maxOpenDescriptors, ThreadFactory threadFactory,
+            Map<Integer, BufferedFileHandle> fileInfoMap) throws HyracksDataException {
         TestStorageManagerComponentHolder.init(PAGE_SIZE, numPages, MAX_OPEN_FILES);
         return new BufferCache(TestStorageManagerComponentHolder.getIOManager(),
                 new ClockPageReplacementStrategy(new HeapBufferAllocator(), DefaultDiskCachedPageAllocator.INSTANCE,
                         PAGE_SIZE, numPages),
                 new DelayPageCleanerPolicy(1000), new FileMapManager(), Integer.MAX_VALUE, maxOpenDescriptors, 10,
-                threadFactory, new HashMap<>(), DefaultBufferCacheReadContextProvider.DEFAULT);
+                threadFactory, fileInfoMap, DefaultBufferCacheReadContextProvider.DEFAULT);
     }
 
     /**
@@ -693,6 +699,58 @@ public class BufferCacheTest {
         Assert.assertTrue(bufferCache.getReopenedDescriptorCount() > 0);
         for (int fileId : fileIds) {
             bufferCache.closeFile(fileId);
+        }
+        bufferCache.close();
+        Assert.assertEquals(0, bufferCache.getOpenDescriptorCount());
+    }
+
+    @Test
+    public void handleOperationsWhileDescriptorsAreReleasedTest() throws Exception {
+        final int maxOpenDescriptors = 4;
+        final int numFiles = 32;
+        final int numThreads = 8;
+        final int opsPerThread = 2000;
+        Map<Integer, BufferedFileHandle> fileInfoMap = new HashMap<>();
+        BufferCache bufferCache = createDescriptorBoundedCache(NUM_PAGES, maxOpenDescriptors, Thread::new, fileInfoMap);
+        IIOManager ioManager = TestStorageManagerComponentHolder.getIOManager();
+        List<BufferedFileHandle> handles = new ArrayList<>();
+        for (int i = 0; i < numFiles; i++) {
+            int fileId = createFileWithPage(bufferCache, true);
+            synchronized (fileInfoMap) {
+                handles.add(fileInfoMap.get(fileId));
+            }
+        }
+        awaitTrue("descriptors to be released", () -> bufferCache.getOpenDescriptorCount() <= maxOpenDescriptors);
+        BufferedFileHandle released = handles.stream().filter(h -> !h.isDescriptorOpen()).findFirst().orElseThrow();
+        long reopened = bufferCache.getReopenedDescriptorCount();
+        int expected = bufferCache.getPageSizeWithHeader();
+        Assert.assertEquals(expected,
+                (long) released.doOnHandle(handle -> ioManager.syncRead(handle, 0, ByteBuffer.allocate(expected))));
+        Assert.assertTrue(bufferCache.getReopenedDescriptorCount() > reopened);
+
+        ExecutorService workers = Executors.newFixedThreadPool(numThreads);
+        try {
+            List<Future<Void>> results = new ArrayList<>();
+            for (int t = 0; t < numThreads; t++) {
+                final Random random = new Random(t);
+                results.add(workers.submit(() -> {
+                    ByteBuffer buffer = ByteBuffer.allocate(expected);
+                    for (int i = 0; i < opsPerThread; i++) {
+                        buffer.clear();
+                        BufferedFileHandle handle = handles.get(random.nextInt(numFiles));
+                        Assert.assertEquals(expected, (long) handle.doOnHandle(h -> ioManager.syncRead(h, 0, buffer)));
+                    }
+                    return null;
+                }));
+            }
+            for (Future<Void> result : results) {
+                result.get(2, TimeUnit.MINUTES);
+            }
+        } finally {
+            workers.shutdownNow();
+        }
+        for (BufferedFileHandle handle : handles) {
+            bufferCache.closeFile(handle.getFileId());
         }
         bufferCache.close();
         Assert.assertEquals(0, bufferCache.getOpenDescriptorCount());
