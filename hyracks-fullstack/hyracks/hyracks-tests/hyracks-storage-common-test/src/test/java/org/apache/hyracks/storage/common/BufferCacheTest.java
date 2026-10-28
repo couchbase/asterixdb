@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.lang3.mutable.MutableObject;
 import org.apache.hyracks.api.context.IHyracksTaskContext;
+import org.apache.hyracks.api.exceptions.ErrorCode;
 import org.apache.hyracks.api.exceptions.HyracksDataException;
 import org.apache.hyracks.api.exceptions.HyracksException;
 import org.apache.hyracks.api.io.FileReference;
@@ -833,6 +834,32 @@ public class BufferCacheTest {
         Assert.assertEquals("the cache write was already synced", 1, bufferCache.getDescriptorReleaseSyncCount());
 
         verifyPage(bufferCache, fileId);
+        bufferCache.closeFile(fileId);
+        bufferCache.close();
+        Assert.assertEquals(0, bufferCache.getOpenDescriptorCount());
+    }
+
+    @Test
+    public void reopeningARemovedFileFailsTest() throws Exception {
+        Map<Integer, BufferedFileHandle> fileInfoMap = new HashMap<>();
+        BufferCache bufferCache = createDescriptorBoundedCache(NUM_PAGES, Integer.MAX_VALUE, Thread::new, fileInfoMap);
+        IIOManager ioManager = TestStorageManagerComponentHolder.getIOManager();
+        int fileId = createFileWithPage(bufferCache, true);
+        BufferedFileHandle handle;
+        synchronized (fileInfoMap) {
+            handle = fileInfoMap.get(fileId);
+        }
+        File file = handle.getFileReference().getFile();
+        Assert.assertTrue(handle.tryReleaseDescriptor());
+        Assert.assertTrue(file.delete());
+        try {
+            handle.doOnHandle(h -> ioManager.syncRead(h, 0, ByteBuffer.allocate(bufferCache.getPageSizeWithHeader())));
+            Assert.fail("expected reopening a removed file to fail");
+        } catch (HyracksDataException e) {
+            Assert.assertTrue(e.toString(), e.matches(ErrorCode.FILE_DOES_NOT_EXIST));
+        }
+        Assert.assertFalse("reopening must not recreate the file", file.exists());
+        Assert.assertFalse(handle.isDescriptorOpen());
         bufferCache.closeFile(fileId);
         bufferCache.close();
         Assert.assertEquals(0, bufferCache.getOpenDescriptorCount());

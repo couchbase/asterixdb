@@ -326,7 +326,8 @@ public abstract class AbstractBufferedFileIOManager {
     }
 
     private boolean isDescriptorReleasable() {
-        return descriptorOpen && !retired && fileHandle != null && writeCount.get() == forcedWriteCount;
+        return descriptorOpen && !retired && fileHandle != null && writeCount.get() == forcedWriteCount
+                && ((FileHandle) fileHandle).canReleaseDescriptor();
     }
 
     private void retireDescriptor(String reason) throws HyracksDataException {
@@ -375,7 +376,7 @@ public abstract class AbstractBufferedFileIOManager {
         // several readers may get here at once under the shared lock; only one of them reopens
         synchronized (descriptorMonitor) {
             if (!descriptorOpen && !retired && fileHandle != null) {
-                ((FileHandle) fileHandle).ensureOpen();
+                ioManager.reopen(fileHandle);
                 descriptorOpen = true;
                 reopened = true;
                 reopenedNanos = System.nanoTime();

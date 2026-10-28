@@ -62,4 +62,14 @@ public class CloudFileHandleTest {
             IoUtil.delete(dir);
         }
     }
+
+    @Test
+    public void pendingUploadKeepsTheDescriptor() {
+        CloudFileHandle handle = new CloudFileHandle(null, null);
+        Assert.assertTrue(handle.canReleaseDescriptor());
+        handle.uploadWritten();
+        Assert.assertFalse(handle.canReleaseDescriptor());
+        handle.uploadFinished();
+        Assert.assertTrue(handle.canReleaseDescriptor());
+    }
 }

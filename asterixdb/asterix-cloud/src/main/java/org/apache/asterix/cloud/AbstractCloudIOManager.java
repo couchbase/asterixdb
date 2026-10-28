@@ -268,6 +268,7 @@ public abstract class AbstractCloudIOManager extends IOManager implements IParti
     @Override
     public final int cloudWrite(IFileHandle fHandle, long offset, ByteBuffer data) throws HyracksDataException {
         ICloudWriter cloudWriter = ((CloudFileHandle) fHandle).getCloudWriter();
+        ((CloudFileHandle) fHandle).uploadWritten();
         int writtenBytes;
         try {
             ensurePosition(fHandle, cloudWriter.position(), offset);
@@ -282,6 +283,7 @@ public abstract class AbstractCloudIOManager extends IOManager implements IParti
     @Override
     public final long cloudWrite(IFileHandle fHandle, long offset, ByteBuffer[] data) throws HyracksDataException {
         ICloudWriter cloudWriter = ((CloudFileHandle) fHandle).getCloudWriter();
+        ((CloudFileHandle) fHandle).uploadWritten();
         int writtenBytes;
         try {
             ensurePosition(fHandle, cloudWriter.position(), offset);
@@ -358,6 +360,16 @@ public abstract class AbstractCloudIOManager extends IOManager implements IParti
         return new DeleteBulkCloudOperation(localIoManager, bucket, cloudClient, NoOpDeleteBulkCallBack.INSTANCE);
     }
 
+    /**
+     * Restores the file first if it was evicted from the local cache while its descriptor was released, as opening it
+     * would.
+     */
+    @Override
+    public final void reopen(IFileHandle fHandle) throws HyracksDataException {
+        onOpen((CloudFileHandle) fHandle);
+        super.reopen(fHandle);
+    }
+
     @Override
     public final void close(IFileHandle fHandle) throws HyracksDataException {
         try {
@@ -377,6 +389,7 @@ public abstract class AbstractCloudIOManager extends IOManager implements IParti
             ICloudWriter cloudWriter = ((CloudFileHandle) fileHandle).getCloudWriter();
             try {
                 cloudWriter.finish();
+                ((CloudFileHandle) fileHandle).uploadFinished();
             } catch (HyracksDataException e) {
                 savedEx = e;
             }

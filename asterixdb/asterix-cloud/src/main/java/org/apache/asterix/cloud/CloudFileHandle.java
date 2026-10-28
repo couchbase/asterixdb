@@ -30,6 +30,9 @@ import org.apache.hyracks.control.nc.io.FileHandle;
 public class CloudFileHandle extends FileHandle {
     private final ICloudWriter cloudWriter;
     private int blockSize;
+    // whether bytes written to the cloud writer have yet to be finished: the descriptor is kept until they are, since
+    // finishing is what a forced write's metadata sync does, and a force on a released, fully forced file is skipped
+    private volatile boolean uploadPending;
     // read without the handle's monitor by the hole puncher, so it must see the descriptor of the current channel
     private volatile int fileDescriptor;
 
@@ -59,6 +62,19 @@ public class CloudFileHandle extends FileHandle {
         if (!wasOpen) {
             fileDescriptor = FileSystemOperationDispatcherUtil.getFileDescriptor(getFileChannel());
         }
+    }
+
+    @Override
+    public boolean canReleaseDescriptor() {
+        return !uploadPending;
+    }
+
+    void uploadWritten() {
+        uploadPending = true;
+    }
+
+    void uploadFinished() {
+        uploadPending = false;
     }
 
     public ICloudWriter getCloudWriter() {
