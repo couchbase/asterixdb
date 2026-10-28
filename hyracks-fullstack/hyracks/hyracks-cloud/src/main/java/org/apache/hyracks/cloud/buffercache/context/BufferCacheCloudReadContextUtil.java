@@ -40,7 +40,7 @@ public class BufferCacheCloudReadContextUtil {
 
     public static void persist(ICloudIOManager cloudIOManager, BufferedFileHandle fileHandle, ByteBuffer buffer,
             long offset) throws HyracksDataException {
-        fileHandle.doOnHandle(handle -> {
+        fileHandle.doCacheWriteOnHandle(handle -> {
             persist(cloudIOManager, handle, buffer, offset);
             return null;
         });

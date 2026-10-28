@@ -756,6 +756,88 @@ public class BufferCacheTest {
         Assert.assertEquals(0, bufferCache.getOpenDescriptorCount());
     }
 
+    @Test
+    public void cacheWritesAreSyncedOnReleaseTest() throws Exception {
+        final int maxOpenDescriptors = 4;
+        final int numFiles = 16;
+        Map<Integer, BufferedFileHandle> fileInfoMap = new HashMap<>();
+        BufferCache bufferCache = createDescriptorBoundedCache(NUM_PAGES, maxOpenDescriptors, Thread::new, fileInfoMap);
+        final AtomicInteger listenedSyncs = new AtomicInteger();
+        bufferCache.setDescriptorListener(new IFileDescriptorListener() {
+            @Override
+            public void releaseSynced(long durationNanos) {
+                Assert.assertTrue(durationNanos >= 0);
+                listenedSyncs.incrementAndGet();
+            }
+        });
+        IIOManager ioManager = TestStorageManagerComponentHolder.getIOManager();
+        int pageSize = bufferCache.getPageSizeWithHeader();
+        List<BufferedFileHandle> handles = new ArrayList<>();
+        for (int i = 0; i < numFiles; i++) {
+            int fileId = createFileWithPage(bufferCache, true);
+            BufferedFileHandle handle;
+            synchronized (fileInfoMap) {
+                handle = fileInfoMap.get(fileId);
+            }
+            handles.add(handle);
+            // rewrite the page with its own bytes, as filling a cache from a durable copy would
+            ByteBuffer page = ByteBuffer.allocate(pageSize);
+            Assert.assertEquals(pageSize, (long) handle.doOnHandle(h -> ioManager.syncRead(h, 0, page)));
+            page.flip();
+            Assert.assertEquals(pageSize, (long) handle.doCacheWriteOnHandle(h -> ioManager.syncWrite(h, 0, page)));
+        }
+        // the cache writes are never forced, yet do not keep the descriptors open
+        awaitTrue("descriptors to be released", () -> bufferCache.getOpenDescriptorCount() <= maxOpenDescriptors);
+        Assert.assertTrue(bufferCache.getReleasedDescriptorCount() >= numFiles - maxOpenDescriptors);
+        Assert.assertTrue(bufferCache.getDescriptorReleaseSyncCount() >= numFiles - maxOpenDescriptors);
+        Assert.assertEquals(bufferCache.getDescriptorReleaseSyncCount(), listenedSyncs.get());
+        for (BufferedFileHandle handle : handles) {
+            verifyPage(bufferCache, handle.getFileId());
+        }
+        for (BufferedFileHandle handle : handles) {
+            bufferCache.closeFile(handle.getFileId());
+        }
+        bufferCache.close();
+        Assert.assertEquals(0, bufferCache.getOpenDescriptorCount());
+    }
+
+    @Test
+    public void releaseSyncsOnlyUnsyncedCacheWritesTest() throws Exception {
+        Map<Integer, BufferedFileHandle> fileInfoMap = new HashMap<>();
+        // unbounded, so that only this test releases the descriptor
+        BufferCache bufferCache = createDescriptorBoundedCache(NUM_PAGES, Integer.MAX_VALUE, Thread::new, fileInfoMap);
+        IIOManager ioManager = TestStorageManagerComponentHolder.getIOManager();
+        int pageSize = bufferCache.getPageSizeWithHeader();
+        int fileId = createFileWithPage(bufferCache, true);
+        BufferedFileHandle handle;
+        synchronized (fileInfoMap) {
+            handle = fileInfoMap.get(fileId);
+        }
+        ByteBuffer page = ByteBuffer.allocate(pageSize);
+
+        Assert.assertTrue(handle.tryReleaseDescriptor());
+        Assert.assertEquals(0, bufferCache.getDescriptorReleaseSyncCount());
+
+        Assert.assertEquals(pageSize, (long) handle.doOnHandle(h -> ioManager.syncRead(h, 0, page)));
+        Assert.assertTrue(handle.tryReleaseDescriptor());
+        Assert.assertEquals("a read leaves nothing to sync", 0, bufferCache.getDescriptorReleaseSyncCount());
+
+        page.flip();
+        Assert.assertEquals(pageSize, (long) handle.doCacheWriteOnHandle(h -> ioManager.syncWrite(h, 0, page)));
+        Assert.assertTrue(handle.tryReleaseDescriptor());
+        Assert.assertEquals(1, bufferCache.getDescriptorReleaseSyncCount());
+
+        page.clear();
+        Assert.assertEquals(pageSize, (long) handle.doOnHandle(h -> ioManager.syncRead(h, 0, page)));
+        Assert.assertTrue(handle.tryReleaseDescriptor());
+        Assert.assertEquals("the cache write was already synced", 1, bufferCache.getDescriptorReleaseSyncCount());
+
+        verifyPage(bufferCache, fileId);
+        bufferCache.closeFile(fileId);
+        bufferCache.close();
+        Assert.assertEquals(0, bufferCache.getOpenDescriptorCount());
+    }
+
     @AfterClass
     public static void cleanup() throws Exception {
         for (String s : openedFiles) {

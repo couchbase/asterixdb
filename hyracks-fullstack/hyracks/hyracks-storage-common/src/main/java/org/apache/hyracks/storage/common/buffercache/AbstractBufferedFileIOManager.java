@@ -77,6 +77,9 @@ public abstract class AbstractBufferedFileIOManager {
     // writes issued, and the count covered by the last successful force: a descriptor is only released when equal
     private final AtomicLong writeCount = new AtomicLong();
     private volatile long forcedWriteCount;
+    // cache writes done, and the count covered by the last sync before a release; see doCacheWriteOnHandle
+    private final AtomicLong cacheWriteCount = new AtomicLong();
+    private long syncedCacheWriteCount;
     private volatile long lastIoNanos;
     // System.nanoTime() as of the last release of the descriptor, for logging how long it stayed released
     private volatile long releasedNanos;
@@ -197,6 +200,28 @@ public abstract class AbstractBufferedFileIOManager {
     }
 
     /**
+     * Run an operation, as {@link #doOnHandle(IHandleOperation)} does, that writes to the file data whose durable copy
+     * is elsewhere, filling a local cache of it, such as a page read from cloud storage. Nothing forces such writes
+     * the way the file's own writes are forced, so unlike those they do not keep the descriptor from being released:
+     * the release syncs them first instead, so that a write-back error is reported rather than lost with the
+     * descriptor.
+     *
+     * @param operation the operation, given the file's OS handle
+     * @return what the operation returns
+     */
+    public final <T> T doCacheWriteOnHandle(IHandleOperation<T> operation) throws HyracksDataException {
+        final long stamp = beginIo();
+        try {
+            return operation.run(fileHandle);
+        } finally {
+            // counted once done and while still shared, so a release, holding the lock exclusively, sees no cache
+            // write counted that has yet to be issued
+            cacheWriteCount.incrementAndGet();
+            endIo(stamp);
+        }
+    }
+
+    /**
      * Force the file into disk
      *
      * @param metadata see {@link java.nio.channels.FileChannel#force(boolean)}
@@ -246,6 +271,7 @@ public abstract class AbstractBufferedFileIOManager {
             if (!isDescriptorReleasable()) {
                 return false;
             }
+            syncCacheWrites();
             ioManager.close(fileHandle);
             descriptorOpen = false;
             releasedNanos = System.nanoTime();
@@ -277,6 +303,26 @@ public abstract class AbstractBufferedFileIOManager {
      */
     public final long getLastIoNanos() {
         return lastIoNanos;
+    }
+
+    // called holding descriptorLock exclusively
+    private void syncCacheWrites() throws HyracksDataException {
+        final long written = cacheWriteCount.get();
+        if (written == syncedCacheWriteCount) {
+            return;
+        }
+        final long startNanos = System.nanoTime();
+        try {
+            ioManager.sync(fileHandle, false);
+        } catch (HyracksDataException e) {
+            // the cached data may not have reached the disk; keep the descriptor, and say so, since a retried sync
+            // can succeed without the failed write-back ever reaching the disk
+            LOGGER.warn("failed to sync the cache writes to {}; its locally cached data may be incomplete",
+                    fileHandle.getFileReference(), e);
+            throw e;
+        }
+        syncedCacheWriteCount = written;
+        bufferCache.descriptorReleaseSynced(System.nanoTime() - startNanos);
     }
 
     private boolean isDescriptorReleasable() {
