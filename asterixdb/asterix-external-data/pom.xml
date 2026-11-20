@@ -599,11 +599,13 @@
     <dependency>
       <groupId>io.delta</groupId>
       <artifactId>delta-kernel-api</artifactId>
+      <!-- @pinned: 4.1+ reworked ScanStateRow/ParquetHandler APIs we subclass; needs a migration -->
       <version>4.0.1</version>
     </dependency>
     <dependency>
       <groupId>io.delta</groupId>
       <artifactId>delta-kernel-defaults</artifactId>
+      <!-- @pinned: 4.1+ reworked ScanStateRow/ParquetHandler APIs we subclass; needs a migration -->
       <version>4.0.1</version>
       <exclusions>
         <exclusion>
