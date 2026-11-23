@@ -104,10 +104,10 @@
     <!-- @derived-from: software.amazon.awssdk:aws-sdk-java-pom:${awsjavasdk.version}#awscrt.version -->
     <awsjavasdk.crt.version>0.50.0</awsjavasdk.crt.version>
 
-    <azureblobjavasdk.version>12.35.2</azureblobjavasdk.version>
-    <azurecommonjavasdk.version>12.34.2</azurecommonjavasdk.version>
-    <azureidentity.version>1.18.7</azureidentity.version>
-    <azuredatalakejavasdk.version>12.28.2</azuredatalakejavasdk.version>
+    <azureblobjavasdk.version>12.37.2</azureblobjavasdk.version>
+    <azurecommonjavasdk.version>12.36.2</azurecommonjavasdk.version>
+    <azureidentity.version>1.19.0</azureidentity.version>
+    <azuredatalakejavasdk.version>12.30.2</azuredatalakejavasdk.version>
     <azurecore.version>1.61.0</azurecore.version>
     <azurecorehttpnetty.version>1.17.0</azurecorehttpnetty.version>
 
