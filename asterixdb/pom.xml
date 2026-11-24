@@ -100,7 +100,7 @@
     <parquet.version>1.18.2</parquet.version> <!-- NOTICE: please update transitives from parquet below on any change -->
     <hadoop-awsjavasdk.version>1.12.797</hadoop-awsjavasdk.version>
 
-    <awsjavasdk.version>2.59.8</awsjavasdk.version>
+    <awsjavasdk.version>2.59.9</awsjavasdk.version>
     <!-- @derived-from: software.amazon.awssdk:aws-sdk-java-pom:${awsjavasdk.version}#awscrt.version -->
     <awsjavasdk.crt.version>0.50.0</awsjavasdk.crt.version>
 
